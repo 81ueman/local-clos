@@ -1,24 +1,17 @@
 package main
 
 import (
-	"fmt"
-	"net"
+	"log"
+	"os"
 )
 
 func main() {
-	ifis, err := net.Interfaces()
-	if err != nil {
-		panic(err)
-	}
-	for _, ifi := range ifis {
-		fmt.Println(ifi.Name, ifi.HardwareAddr, ifi.Flags, ifi.MTU)
-		addrs, err := ifi.Addrs()
-		if err != nil {
-			panic(err)
-		}
-		for _, addr := range addrs {
-			fmt.Println(addr.Network(), addr.String())
-		}
-		fmt.Println("")
+	mode := os.Args[1]
+	if mode == "active" {
+		active_mode()
+	} else if mode == "passive" {
+		passive_mode()
+	} else {
+		log.Fatal("invalid mode")
 	}
 }
