@@ -106,7 +106,7 @@ func send_bgp(ifi net.Interface) {
 	}
 	defer conn.Close()
 	for {
-		bytes, err := Marshal(open.New(4, 65000, 180, 0), 1)
+		bytes, err := Marshal(open.New(4, 65000, 180, 0))
 		if err != nil {
 			log.Fatalf("failed to marshal: %v", err)
 		}
