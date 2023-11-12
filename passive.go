@@ -1,22 +1,29 @@
 package main
 
 import (
+	"encoding/binary"
 	"log"
 	"net"
+
+	"github.com/81ueman/local-clos/header"
+	"github.com/81ueman/local-clos/open"
 )
+
+type open_MSG struct {
+	header.Header
+	open.Open
+}
 
 func handle_connection(conn net.Conn) {
 	defer conn.Close()
-	buf := make([]byte, 1024)
 	for {
-		n, err := conn.Read(buf)
+		msg := open_MSG{}
+		err := binary.Read(conn, binary.BigEndian, &msg)
 		if err != nil {
 			log.Printf("error: %v", err)
 			return
 		}
-		for i := 0; i < n; i++ {
-			log.Printf("%x", buf[i])
-		}
+		log.Printf("msg: %v", msg)
 	}
 }
 func passive_mode() {

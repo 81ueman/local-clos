@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/81ueman/local-clos/header"
+	"github.com/81ueman/local-clos/open"
 )
 
-func local_addr(ifi net.Interface) (net.IP, error) {
+var errArptableNotFound = errors.New("no arp table found")
+
+func local_ip(ifi net.Interface) (net.IP, error) {
 	addrs, err := ifi.Addrs()
 	if err != nil {
 		log.Fatalf("failed to get addrs: %v", err)
@@ -29,15 +31,91 @@ func local_addr(ifi net.Interface) (net.IP, error) {
 	}
 	return ip, nil
 }
+func local_addr(ifi net.Interface) (*net.TCPAddr, error) {
+	ip, err := local_ip(ifi)
+	if err != nil {
+		return &net.TCPAddr{}, err
+	}
+	laddr := &net.TCPAddr{
+		IP:   ip,
+		Port: 179,
+	}
+	return laddr, nil
+}
 
-func remote_addr(ifi net.Interface) (net.IP, error) {
+func remote_ip(ifi net.Interface) (net.IP, error) {
 	out, err := exec.Command("/usr/sbin/ip", "neigh", "show", "dev", ifi.Name).Output()
 	// format: ip lladdr MAC STALE|REACHABLE|DELAY|PROBE|FAILED
 	if err != nil {
 		return net.IPv4zero, errors.New("failed to get arp table")
 	}
+	log.Printf("arp table: %v", string(out))
+	if len(out) == 0 {
+		return net.IPv4zero, errArptableNotFound
+	}
 	rip := strings.Split(string(out), " ")[0]
 	return net.ParseIP(rip), nil
+}
+
+func remote_tcpaddr(ifi net.Interface) (*net.TCPAddr, error) {
+	rip, err := remote_ip(ifi)
+	if err != nil {
+		return &net.TCPAddr{}, err
+	}
+	raddr := &net.TCPAddr{
+		IP:   rip,
+		Port: 179,
+	}
+	return raddr, nil
+}
+
+func remote_addr_loop(ifi net.Interface) (*net.TCPAddr, error) {
+	var raddr *net.TCPAddr
+	for {
+		var err error
+		raddr, err = remote_tcpaddr(ifi)
+		if err == errArptableNotFound {
+			log.Println("remote addres is not found in the ARP table. Waiting one more second...")
+			time.Sleep(1 * time.Second)
+			continue
+		} else if err != nil {
+			log.Printf("failed to get remote addr: %v", err)
+			return &net.TCPAddr{}, err
+		} else {
+			break
+		}
+	}
+	return raddr, nil
+}
+
+func send_bgp(ifi net.Interface) {
+	laddr, err := local_addr(ifi)
+	if err != nil {
+		log.Printf("failed to get local addr: %v", err)
+		return
+	}
+	raddr, err := remote_addr_loop(ifi)
+	if err != nil {
+		log.Printf("failed to get remote addr: %v", err)
+		return
+	}
+
+	conn, err := net.DialTCP("tcp", laddr, raddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+	for {
+		bytes, err := Marshal(open.New(4, 65000, 180, 0), 1)
+		if err != nil {
+			log.Fatalf("failed to marshal: %v", err)
+		}
+		_, err = conn.Write(bytes)
+		if err != nil {
+			log.Fatalf("failed to write: %v", err)
+		}
+		time.Sleep(1 * time.Second)
+	}
 }
 
 func active_mode() {
@@ -46,41 +124,13 @@ func active_mode() {
 		log.Fatalf("failed to get interfaces: %v", err)
 	}
 	for _, ifi := range ifis {
-		if ifi.Flags&net.FlagLoopback != 0 {
+		if is_loopback(ifi) {
 			continue
 		}
-
-		local_addr, err := local_addr(ifi)
-		if err != nil {
-			log.Fatalf("failed to get local addr: %v", err)
-		}
-		laddr := &net.TCPAddr{
-			IP:   local_addr,
-			Port: 179,
-		}
-
-		rip, err := remote_addr(ifi)
-		if err != nil {
-			log.Fatalf("failed to get remote addr: %v", err)
-		}
-		raddr := &net.TCPAddr{
-			IP:   rip,
-			Port: 179,
-		}
-
-		conn, err := net.DialTCP("tcp", laddr, raddr)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer conn.Close()
-		header := header.New(0xffff, 0xff)
-		for {
-			hbytes, err := header.Marshal()
-			if err != nil {
-				log.Fatal(err)
-			}
-			conn.Write(hbytes)
-			time.Sleep(1 * time.Second)
-		}
+		log.Printf("sending bgp from %v", ifi.Name)
+		go send_bgp(ifi)
+	}
+	for {
+		time.Sleep(1 * time.Second)
 	}
 }
