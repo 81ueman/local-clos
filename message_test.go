@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/81ueman/local-clos/keepalive"
 	"github.com/81ueman/local-clos/open"
 )
 
@@ -40,6 +41,14 @@ func TestMarshal(t *testing.T) {
 				},
 			},
 			want:    append(marker, []byte{0, 28, 1, 4, 0, 1, 0, 1, 0, 0, 0, 1}...),
+			wantErr: false,
+		},
+		{
+			name: "keepalive",
+			args: args{
+				m: &keepalive.Keepalive{},
+			},
+			want:    append(marker, []byte{0, 19, 4}...),
 			wantErr: false,
 		},
 		{

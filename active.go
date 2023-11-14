@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/81ueman/local-clos/keepalive"
 	"github.com/81ueman/local-clos/open"
 )
 
@@ -40,11 +41,7 @@ func handle_bgp(ifi net.Interface) {
 			switch event {
 			case Tcp_CR_Acked:
 				open_msg := open.New(4, 65000, 180, 0)
-				bytes, err := Marshal(open_msg)
-				if err != nil {
-					log.Fatalf("failed to marshal: %v", err)
-				}
-				_, err = session.Conn.Write(bytes)
+				err := send_message(session.Conn, open_msg)
 				if err != nil {
 					log.Fatalf("failed to write: %v", err)
 				}
@@ -66,7 +63,22 @@ func handle_bgp(ifi net.Interface) {
 			log.Printf("msg: %v", msg)
 			session.State = OpenConfirm
 		case OpenConfirm:
+			keepalive := keepalive.New()
+			err := send_message(session.Conn, keepalive)
+			if err != nil {
+				log.Fatalf("failed to write: %v", err)
+			}
+			var msg keepalive_MSG
+			err = binary.Read(session.Conn, binary.BigEndian, &msg)
+			if err != nil {
+				log.Printf("error: %v", err)
+				return
+			}
+			log.Printf("msg: %v", msg)
+			session.State = Established
 		case Established:
+			log.Println("session established")
+			select {}
 		default:
 			log.Fatalf("unknown state: %v", session.State)
 		}

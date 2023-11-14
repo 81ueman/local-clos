@@ -6,14 +6,9 @@ import (
 	"net"
 	"time"
 
-	"github.com/81ueman/local-clos/header"
+	"github.com/81ueman/local-clos/keepalive"
 	"github.com/81ueman/local-clos/open"
 )
-
-type open_MSG struct {
-	header.Header
-	open.Open
-}
 
 func handle_bgp_passive(ifi net.Interface) {
 	session := Session{
@@ -48,13 +43,9 @@ func handle_bgp_passive(ifi net.Interface) {
 			switch event {
 			case Tcp_CR_Acked:
 				open_msg := open.New(4, 65000, 180, 0)
-				bytes, err := Marshal(open_msg)
+				err := send_message(session.Conn, open_msg)
 				if err != nil {
-					log.Fatalf("failed to marshal: %v", err)
-				}
-				_, err = session.Conn.Write(bytes)
-				if err != nil {
-					log.Fatalf("failed to write: %v", err)
+					log.Fatalf("failed to send message: %v", err)
 				}
 				session.State = OpenSent
 			case TcpConnectionFails:
@@ -71,9 +62,24 @@ func handle_bgp_passive(ifi net.Interface) {
 			}
 			log.Printf("msg: %v", msg)
 			session.State = OpenConfirm
-
 		case OpenConfirm:
+			msg := keepalive.New()
+			err := send_message(session.Conn, msg)
+			if err != nil {
+				log.Printf("error: %v", err)
+				return
+			}
+			var keepalive_msg keepalive_MSG
+			err = binary.Read(session.Conn, binary.BigEndian, &keepalive_msg)
+			if err != nil {
+				log.Printf("error: %v", err)
+				return
+			}
+			log.Printf("keepalive_msg: %v", keepalive_msg)
+			session.State = Established
 		case Established:
+			log.Println("session established")
+			select {}
 		}
 
 	}

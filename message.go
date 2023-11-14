@@ -2,13 +2,24 @@ package main
 
 import (
 	"errors"
+	"net"
 
 	"github.com/81ueman/local-clos/header"
+	"github.com/81ueman/local-clos/keepalive"
 	"github.com/81ueman/local-clos/open"
 )
 
 type Message interface {
 	Marshal() ([]byte, error)
+}
+
+type open_MSG struct {
+	header.Header
+	open.Open
+}
+
+type keepalive_MSG struct {
+	header.Header
 }
 
 const header_size uint16 = 19
@@ -20,6 +31,8 @@ func Marshal(m Message) ([]byte, error) {
 	switch m.(type) {
 	case *open.Open:
 		ty = 1
+	case *keepalive.Keepalive:
+		ty = 4
 	default:
 		return nil, ErrNotBGPMessage
 	}
@@ -33,4 +46,16 @@ func Marshal(m Message) ([]byte, error) {
 		return nil, err
 	}
 	return append(head, body...), nil
+}
+
+func send_message(conn net.Conn, m Message) error {
+	bytes, err := Marshal(m)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Write(bytes)
+	if err != nil {
+		return err
+	}
+	return nil
 }
