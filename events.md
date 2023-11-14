@@ -15,3 +15,11 @@ Events whose status is mandatory in RFC 4271.
 - 17 TcpConnectionConfirmed
 - 18 TcpConnectionFails
 ## 8.1.5. BGP Message-Based Events 
+- 19 BGPOpen
+- 21 BGPHeaderErr
+- 22 BGPOpenMsgErr
+- 24 NotifMsgVerErr
+- 25 NotifMsg
+- 26 KeepAliveMsg
+- 27 UpdateMsg
+- 28 UpdateMsgErr 

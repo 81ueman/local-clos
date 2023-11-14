@@ -103,5 +103,23 @@ func start_tcp(ifi net.Interface) (*net.TCPConn, error) {
 		return nil, err
 	}
 	return conn, nil
+}
 
+func wait_tcp(ifi net.Interface) (*net.TCPConn, error) {
+	laddr, err := local_tcpaddr(ifi)
+	if err != nil {
+		log.Printf("failed to get local addr: %v", err)
+		return nil, err
+	}
+	l, err := net.ListenTCP("tcp", laddr)
+	if err != nil {
+		log.Printf("failed to listen: %v", err)
+		return nil, err
+	}
+	conn, err := l.AcceptTCP()
+	if err != nil {
+		log.Printf("failed to accept: %v", err)
+		return nil, err
+	}
+	return conn, nil
 }

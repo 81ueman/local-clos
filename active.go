@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/binary"
 	"log"
 	"net"
 	"time"
+
+	"github.com/81ueman/local-clos/open"
 )
 
 func handle_bgp(ifi net.Interface) {
@@ -24,6 +27,7 @@ func handle_bgp(ifi net.Interface) {
 			go func(session *Session) {
 				conn, err := start_tcp(ifi)
 				if err != nil {
+					log.Fatalf("failed to start tcp: %v", err)
 					events <- TcpConnectionFails
 				}
 				session.Conn = conn
@@ -35,6 +39,15 @@ func handle_bgp(ifi net.Interface) {
 			event := <-events
 			switch event {
 			case Tcp_CR_Acked:
+				open_msg := open.New(4, 65000, 180, 0)
+				bytes, err := Marshal(open_msg)
+				if err != nil {
+					log.Fatalf("failed to marshal: %v", err)
+				}
+				_, err = session.Conn.Write(bytes)
+				if err != nil {
+					log.Fatalf("failed to write: %v", err)
+				}
 				session.State = OpenSent
 			case TcpConnectionFails:
 				session.State = Active
@@ -44,6 +57,14 @@ func handle_bgp(ifi net.Interface) {
 		case Active:
 		case OpenSent:
 			log.Println("session conn: ", session.Conn.RemoteAddr().String())
+			msg := open_MSG{}
+			err := binary.Read(session.Conn, binary.BigEndian, &msg)
+			if err != nil {
+				log.Printf("error: %v", err)
+				return
+			}
+			log.Printf("msg: %v", msg)
+			session.State = OpenConfirm
 		case OpenConfirm:
 		case Established:
 		default:
