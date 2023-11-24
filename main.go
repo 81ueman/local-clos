@@ -18,6 +18,6 @@ func main() {
 	} else if mode == "passive" {
 		passive_mode()
 	} else {
-		log.Fatal("invalid mode")
+		log.Fatal("usage: ./local-clos [active|passive]")
 	}
 }
