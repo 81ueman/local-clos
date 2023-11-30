@@ -26,6 +26,7 @@ type Session struct {
 	KeepaliveTimer      time.Timer
 	KeepaliveTime       time.Duration
 	Conn                net.Conn
+	Events              chan Event
 }
 
 type Event string

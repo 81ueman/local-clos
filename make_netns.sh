@@ -60,7 +60,7 @@ ip netns exec leaf-1 sysctl -w net.ipv4.conf.veth-s2-l1-l.arp_accept=1
 ip netns exec leaf-2 sysctl -w net.ipv4.conf.veth-s1-l2-l.arp_accept=1
 ip netns exec leaf-2 sysctl -w net.ipv4.conf.veth-s2-l2-l.arp_accept=1
 
-echo 'alias s1="sudo ip netns exec spine-1"' > tmp
-echo 'alias s2="sudo ip netns exec spine-2"' >> tmp
-echo 'alias l1="sudo ip netns exec leaf-1"' >> tmp
-echo 'alias l2="sudo ip netns exec leaf-2"' >> tmp
+echo 'alias s1="sudo ip netns exec spine-1"' > shell_alias
+echo 'alias s2="sudo ip netns exec spine-2"' >> shell_alias
+echo 'alias l1="sudo ip netns exec leaf-1"' >> shell_alias
+echo 'alias l2="sudo ip netns exec leaf-2"' >> shell_alias
