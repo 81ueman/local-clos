@@ -3,6 +3,8 @@ package update
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"net/netip"
 )
 
@@ -33,12 +35,12 @@ type UpdateMessage struct {
 	NetworkLayerReachable []netip.Prefix
 }
 
+var (
+	ErrInvalidPrefix = errors.New("invalid prefix")
+)
+
 func New(WithdrawnRoutes []netip.Prefix, PathAttrs []PathAttr, NLR []netip.Prefix) *UpdateMessage {
-	WithdrawnRoutesLength := 0
-	for _, prefix := range WithdrawnRoutes {
-		WithdrawnRoutesLength += 1
-		WithdrawnRoutesLength += prefix.Bits() / 8
-	}
+	WithdrawnRoutesLength := len(WithdrawnRoutes)
 	TotalPathAttribute := 0
 	for _, attr := range PathAttrs {
 		TotalPathAttribute += 1 // AttrFlags
@@ -62,16 +64,68 @@ func New(WithdrawnRoutes []netip.Prefix, PathAttrs []PathAttr, NLR []netip.Prefi
 
 func (u *UpdateMessage) Marshal() ([]byte, error) {
 	buf := new(bytes.Buffer)
+
 	err := binary.Write(buf, binary.BigEndian, u.WithdrawnRoutesLength)
 	if err != nil {
 		return nil, err
 	}
+
 	for _, prefix := range u.WithdrawnRoutes {
-		err = binary.Write(buf, binary.BigEndian, prefix)
+		rlen := (prefix.Bits()-1)/8 + 1
+		err := binary.Write(buf, binary.BigEndian, uint8(prefix.Bits()))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to write a prefix length: %w", err)
+		}
+		pref_byte, err := prefix.MarshalBinary()
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal prefix: %w", err)
+		}
+		buf.Write(pref_byte[:rlen-1])
+		if err != nil {
+			return nil, fmt.Errorf("failed to write prefix: %w", err)
 		}
 	}
+
+	binary.Write(buf, binary.BigEndian, u.TotalPathAttribute)
+	for _, attr := range u.PathAttrs {
+		err := binary.Write(buf, binary.BigEndian, attr.AttrFlags)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write attribute flags: %w", err)
+		}
+		err = binary.Write(buf, binary.BigEndian, attr.AttrTypeCode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write attribute type code: %w", err)
+		}
+		if IsExtendedLength(attr.AttrFlags) {
+			err = binary.Write(buf, binary.BigEndian, uint16(len(attr.AttrValue)))
+		} else {
+			err = binary.Write(buf, binary.BigEndian, uint8(len(attr.AttrValue)))
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to write attribute length: %w", err)
+		}
+		err = binary.Write(buf, binary.BigEndian, attr.AttrValue)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write attribute value: %w", err)
+		}
+
+	}
+	for _, prefix := range u.NetworkLayerReachable {
+		err := binary.Write(buf, binary.BigEndian, uint8(prefix.Bits()))
+		if err != nil {
+			return nil, fmt.Errorf("failed to write a prefix length: %w", err)
+		}
+		pref_byte, err := prefix.MarshalBinary()
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal prefix: %w", err)
+		}
+		rlen := (prefix.Bits()-1)/8 + 1
+		buf.Write(pref_byte[:rlen])
+		if err != nil {
+			return nil, fmt.Errorf("failed to write prefix: %w", err)
+		}
+	}
+	return buf.Bytes(), nil
 }
 
 func IsOptional(flag AttrFlags) bool {
