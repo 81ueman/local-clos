@@ -9,7 +9,9 @@ import (
 
 	"github.com/81ueman/local-clos/header"
 	"github.com/81ueman/local-clos/keepalive"
+	"github.com/81ueman/local-clos/notification"
 	"github.com/81ueman/local-clos/open"
+	"github.com/81ueman/local-clos/update"
 )
 
 type Message interface {
@@ -33,6 +35,10 @@ func Type(m Message) (uint8, error) {
 	switch m.(type) {
 	case *open.Open:
 		return 1, nil
+	case *update.UpdateMessage:
+		return 2, nil
+	case *notification.Notification:
+		return 3, nil
 	case *keepalive.Keepalive:
 		return 4, nil
 	default:

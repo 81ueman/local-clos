@@ -138,7 +138,6 @@ func UnMarshal(b []byte) (*UpdateMessage, error) {
 		b = b[1:]
 
 		octet := (prefixLength-1)/8 + 1
-		fmt.Println(prefixLength)
 		prefix := netip.Prefix{}
 		prefix_bin := make([]byte, 5)
 		copy(prefix_bin, b[:octet])
@@ -153,7 +152,6 @@ func UnMarshal(b []byte) (*UpdateMessage, error) {
 
 	totalPathAttrLength := binary.BigEndian.Uint16(b[0:2])
 	b = b[2:]
-	fmt.Println(totalPathAttrLength)
 	pathAttrs := make([]PathAttr, 0)
 	for i := 0; i < int(totalPathAttrLength); {
 		attrFlags := AttrFlags(b[0])
@@ -172,7 +170,6 @@ func UnMarshal(b []byte) (*UpdateMessage, error) {
 			b = b[1:]
 			i += 1
 		}
-		fmt.Println(attrLength)
 		attrValue := b[:attrLength]
 		b = b[attrLength:]
 		pathAttrs = append(pathAttrs, PathAttr{
@@ -182,10 +179,8 @@ func UnMarshal(b []byte) (*UpdateMessage, error) {
 		})
 		i += int(attrLength)
 	}
-	fmt.Println(len(b))
 	NLR := make([]netip.Prefix, 0)
 	for len(b) > 0 {
-		fmt.Println("len", len(b))
 		prefixLength := b[0]
 		octet := (prefixLength-1)/8 + 1
 		b = b[1:]
