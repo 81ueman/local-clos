@@ -62,6 +62,7 @@ func New(WithdrawnRoutes []netip.Prefix, PathAttrs []PathAttr, NLR []netip.Prefi
 	}
 }
 
+// ひどいのでリファクタ必須
 func (u *UpdateMessage) Marshal() ([]byte, error) {
 	buf := new(bytes.Buffer)
 
@@ -80,7 +81,7 @@ func (u *UpdateMessage) Marshal() ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal prefix: %w", err)
 		}
-		buf.Write(pref_byte[:rlen-1])
+		buf.Write(pref_byte[:rlen])
 		if err != nil {
 			return nil, fmt.Errorf("failed to write prefix: %w", err)
 		}
@@ -126,6 +127,87 @@ func (u *UpdateMessage) Marshal() ([]byte, error) {
 		}
 	}
 	return buf.Bytes(), nil
+}
+
+func UnMarshal(b []byte) (*UpdateMessage, error) {
+	withdrawnRoutesLength := binary.BigEndian.Uint16(b[0:2])
+	b = b[2:]
+	withdrawnRoutes := make([]netip.Prefix, 0)
+	for i := 0; i < int(withdrawnRoutesLength); i++ {
+		prefixLength := b[0]
+		b = b[1:]
+
+		octet := (prefixLength-1)/8 + 1
+		fmt.Println(prefixLength)
+		prefix := netip.Prefix{}
+		prefix_bin := make([]byte, 5)
+		copy(prefix_bin, b[:octet])
+		b = b[octet:]
+		prefix_bin[4] = prefixLength
+		err := prefix.UnmarshalBinary(prefix_bin)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal prefix: %w", err)
+		}
+		withdrawnRoutes = append(withdrawnRoutes, prefix)
+	}
+
+	totalPathAttrLength := binary.BigEndian.Uint16(b[0:2])
+	b = b[2:]
+	fmt.Println(totalPathAttrLength)
+	pathAttrs := make([]PathAttr, 0)
+	for i := 0; i < int(totalPathAttrLength); {
+		attrFlags := AttrFlags(b[0])
+		b = b[1:]
+		i += 1
+		attrTypeCode := TypeCode(b[0])
+		b = b[1:]
+		i += 1
+		var attrLength uint16
+		if IsExtendedLength(attrFlags) {
+			attrLength = binary.BigEndian.Uint16(b[0:2])
+			b = b[2:]
+			i += 2
+		} else {
+			attrLength = uint16(b[0])
+			b = b[1:]
+			i += 1
+		}
+		fmt.Println(attrLength)
+		attrValue := b[:attrLength]
+		b = b[attrLength:]
+		pathAttrs = append(pathAttrs, PathAttr{
+			AttrFlags:    attrFlags,
+			AttrTypeCode: attrTypeCode,
+			AttrValue:    attrValue,
+		})
+		i += int(attrLength)
+	}
+	fmt.Println(len(b))
+	NLR := make([]netip.Prefix, 0)
+	for len(b) > 0 {
+		fmt.Println("len", len(b))
+		prefixLength := b[0]
+		octet := (prefixLength-1)/8 + 1
+		b = b[1:]
+		prefix := netip.Prefix{}
+
+		prefix_bin := make([]byte, 5)
+		copy(prefix_bin, b[:octet])
+		prefix_bin[4] = prefixLength
+		err := prefix.UnmarshalBinary(prefix_bin)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal prefix: %w", err)
+		}
+		b = b[octet:]
+		NLR = append(NLR, prefix)
+	}
+	return &UpdateMessage{
+		WithdrawnRoutesLength: withdrawnRoutesLength,
+		WithdrawnRoutes:       withdrawnRoutes,
+		TotalPathAttribute:    totalPathAttrLength,
+		PathAttrs:             pathAttrs,
+		NetworkLayerReachable: NLR,
+	}, nil
 }
 
 func IsOptional(flag AttrFlags) bool {

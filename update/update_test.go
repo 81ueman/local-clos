@@ -138,7 +138,7 @@ func TestMarshal(t *testing.T) {
 			want: []byte{
 				0x00, 0x01, // WithdrawnRoutesLength
 				24, 192, 168, 0, // WithdrawnRoutes
-				24,
+				0, 24,
 				0x40, 0x01, 0x01, 0x00, // ORIGIN
 				0x40, 0x02, 0x03, 0x02, 0x01, 0x00, // AS_PATH
 				0x40, 0x03, 0x04, 0xc0, 0xa8, 0x00, 0x01, // NEXT_HOP
@@ -155,6 +155,77 @@ func TestMarshal(t *testing.T) {
 			}
 			if reflect.DeepEqual(got, test.want) != true {
 				t.Errorf("Marshal() = %v\n want %v", got, test.want)
+			}
+		})
+	}
+
+}
+
+func TestUnMarshal(t *testing.T) {
+	tests := []struct {
+		name  string
+		in    []byte
+		want  *update.UpdateMessage
+		isErr bool
+	}{
+		{
+			name: "test1",
+			in: []byte{
+				0x00, 0x01, // WithdrawnRoutesLength
+				24, 192, 168, 0, // WithdrawnRoutes
+				0, 24,
+				0x40, 0x01, 0x01, 0x00, // ORIGIN
+				0x40, 0x02, 0x03, 0x02, 0x01, 0x00, // AS_PATH
+				0x40, 0x03, 0x04, 0xc0, 0xa8, 0x00, 0x01, // NEXT_HOP
+				0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x64, // LOCAL_PREF
+				24, 192, 168, 0, // NetworkLayerReachable
+			},
+			want: &update.UpdateMessage{
+				WithdrawnRoutesLength: 1,
+				WithdrawnRoutes: []netip.Prefix{
+					netip.MustParsePrefix("192.168.0.0/24"),
+				},
+				TotalPathAttribute: 24,
+				PathAttrs: []update.PathAttr{
+					{
+						AttrFlags:    0x40,
+						AttrTypeCode: update.ORIGIN,
+						AttrValue:    []byte{0x00},
+					},
+					{
+						AttrFlags:    0x40,
+						AttrTypeCode: update.AS_PATH,
+						AttrValue:    []byte{0x02, 0x01, 0x00},
+					},
+					{
+						AttrFlags:    0x40,
+						AttrTypeCode: update.NEXT_HOP,
+						AttrValue:    []byte{0xc0, 0xa8, 0x00, 0x01},
+					},
+					{
+						AttrFlags:    0x40,
+						AttrTypeCode: update.LOCAL_PREF,
+						AttrValue:    []byte{0x00, 0x00, 0x00, 0x64},
+					},
+				},
+				NetworkLayerReachable: []netip.Prefix{
+					netip.MustParsePrefix("192.168.0.0/24"),
+				},
+			},
+			isErr: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := update.UnMarshal(test.in)
+			if test.isErr && err == nil {
+				t.Errorf("UnMarshal() should return error but doesn't ")
+			}
+			if !test.isErr && err != nil {
+				t.Errorf("UnMarshal() should not return error but does: %v", err)
+			}
+			if reflect.DeepEqual(got, test.want) != true {
+				t.Errorf("UnMarshal() = %v\n want %v", got, test.want)
 			}
 		})
 	}
