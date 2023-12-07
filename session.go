@@ -25,6 +25,7 @@ type Session struct {
 	HoldTime            time.Duration
 	KeepaliveTimer      time.Timer
 	KeepaliveTime       time.Duration
+	Ifi                 net.Interface
 	Conn                net.Conn
 	Events              chan Event
 }
@@ -49,4 +50,5 @@ const (
 	KeepAliveMsg                Event = "KeepAliveMsg"
 	UpdateMsg                   Event = "UpdateMsg"
 	UpdateMsgErr                Event = "UpdateMsgErr"
+	Established_Event           Event = "Established"
 )

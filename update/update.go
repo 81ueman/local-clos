@@ -5,11 +5,22 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net/netip"
+
+	"github.com/81ueman/local-clos/header"
 )
 
 type AttrFlags uint8
 type TypeCode uint8
+
+const (
+	OPTIONAL        AttrFlags = 0x80
+	TRANSITIVE      AttrFlags = 0x40
+	PARTIAL         AttrFlags = 0x20
+	EXTENDED_LENGTH AttrFlags = 0x10
+)
 
 const (
 	ORIGIN           TypeCode = 1
@@ -19,6 +30,12 @@ const (
 	LOCAL_PREF       TypeCode = 5
 	ATOMIC_AGGREGATE TypeCode = 6
 	AGGREGATOR       TypeCode = 7
+)
+
+const (
+	IGP        uint8 = 0
+	EGP        uint8 = 1
+	INCOMPLETE uint8 = 2
 )
 
 type PathAttr struct {
@@ -205,6 +222,27 @@ func UnMarshal(b []byte) (*UpdateMessage, error) {
 	}, nil
 }
 
+func Read(r io.Reader) (*UpdateMessage, error) {
+	b := new(bytes.Buffer)
+	if _, err := io.CopyN(b, r, 19); err != nil {
+		log.Fatalf("failed to read: %v", err)
+	}
+	h := header.Header{}
+	binary.Read(b, binary.BigEndian, &h)
+
+	b = new(bytes.Buffer)
+
+	log.Println("length: ", h.Length)
+	if _, err := io.CopyN(b, r, int64(h.Length)-19); err != nil {
+		log.Fatalf("failed to read: %v", err)
+	}
+	msg, err := UnMarshal(b.Bytes())
+	if err != nil {
+		log.Fatalf("failed to unmarshal: %v", err)
+	}
+	return msg, nil
+
+}
 func IsOptional(flag AttrFlags) bool {
 	return flag&0x80 == 0x80
 }

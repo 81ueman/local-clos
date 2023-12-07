@@ -1,16 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/netip"
 	"time"
 
-	"github.com/81ueman/local-clos/header"
 	"github.com/81ueman/local-clos/keepalive"
 	"github.com/81ueman/local-clos/open"
 	"github.com/81ueman/local-clos/update"
@@ -102,60 +99,48 @@ func (s *Session) OpenConfirm() {
 }
 
 func (s *Session) Established() {
-
-	sample := update.New(
-		[]netip.Prefix{},
-		[]update.PathAttr{
-			{
-				AttrFlags:    0x40,
-				AttrTypeCode: update.ORIGIN,
-				AttrValue:    []byte{0x00},
+	event := <-s.Events
+	switch event {
+	case Established_Event:
+		addrs, err := s.Ifi.Addrs()
+		if err != nil {
+			log.Fatalf("failed to get addrs: %v", err)
+		}
+		prefixes := make([]netip.Prefix, 0)
+		for _, addr := range addrs {
+			prefix := netip.PrefixFrom(netip.MustParseAddr(addr.String()), 32)
+			prefixes = append(prefixes, prefix)
+		}
+		update_msg := update.New(
+			[]netip.Prefix{},
+			[]update.PathAttr{
+				{
+					AttrFlags: update.TRANSITIVE,
+					AttrTypeCode: update.ORIGIN,
+					AttrValue: []byte{update.IGP},
+				},
+				{
+					AttrFlags: update.TRANSITIVE,
+					AttrTypeCode: update.AS_PATH,
+					AttrValue: []byte{update.AS_PATH, 0, 1, 0, 1},
+				}
 			},
-			{
-				AttrFlags:    0x40,
-				AttrTypeCode: update.AS_PATH,
-				AttrValue:    []byte{byte(update.AS_SEQUENCE), 0x01, 0x10, 0x00},
-			},
-			{
-				AttrFlags:    0x40,
-				AttrTypeCode: update.NEXT_HOP,
-				AttrValue:    []byte{0xc0, 0xa8, 0x00, 0x01},
-			},
-			{
-				AttrFlags:    0x40,
-				AttrTypeCode: update.LOCAL_PREF,
-				AttrValue:    []byte{0x00, 0x00, 0x00, 0x64},
-			},
-		},
-		[]netip.Prefix{
-			netip.MustParsePrefix("192.168.0.0/24"),
-		},
-	)
-	fmt.Println("before send")
+			prefixes,
+		)
+		if err := send_message(s.Conn, update_msg); err != nil {
+			log.Fatalf("failed to send message: %v", err)
+		}
+		fmt.Println("after send")
+		msg, err := update.Read(s.Conn)
+		if err != nil {
+			log.Fatalf("failed to read: %v", err)
+		}
 
-	if err := send_message(s.Conn, sample); err != nil {
-		log.Fatalf("failed to write: %v", err)
+		log.Printf("msg: %v", msg)
+	default:
+		log.Print("living in established:)")
 	}
-	fmt.Println("after send")
 
-	b := new(bytes.Buffer)
-	if _, err := io.CopyN(b, s.Conn, 19); err != nil {
-		log.Fatalf("failed to read: %v", err)
-	}
-	h := header.Header{}
-	binary.Read(b, binary.BigEndian, &h)
-
-	b = new(bytes.Buffer)
-
-	log.Println("length: ", h.Length)
-	if _, err := io.CopyN(b, s.Conn, int64(h.Length)-19); err != nil {
-		log.Fatalf("failed to read: %v", err)
-	}
-	msg, err := update.UnMarshal(b.Bytes())
-	if err != nil {
-		log.Fatalf("failed to unmarshal: %v", err)
-	}
-	log.Printf("msg: %v", msg)
 }
 
 func handle_bgp(ifi net.Interface, active bool) {
@@ -165,6 +150,7 @@ func handle_bgp(ifi net.Interface, active bool) {
 		ConnectRetryTime:    120 * time.Second,
 		HoldTime:            180 * time.Second,
 		KeepaliveTime:       60 * time.Second,
+		Ifi:                 ifi,
 		Events:              make(chan Event),
 	}
 
