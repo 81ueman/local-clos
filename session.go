@@ -2,7 +2,10 @@ package main
 
 import (
 	"net"
+	"net/netip"
 	"time"
+
+	"github.com/81ueman/local-clos/update"
 )
 
 type State string
@@ -16,6 +19,8 @@ const (
 	Established State = "Established"
 )
 
+type LocRib map[netip.Prefix][]update.PathAttr
+
 type Session struct {
 	State               State
 	ConnectRetryCounter int
@@ -28,6 +33,8 @@ type Session struct {
 	Ifi                 net.Interface
 	Conn                net.Conn
 	Events              chan Event
+	LocRibIn            LocRib
+	LocRibOut           LocRib
 }
 
 type Event string

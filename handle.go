@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/81ueman/local-clos/keepalive"
@@ -96,34 +97,34 @@ func (s *Session) OpenConfirm() {
 	}
 	log.Printf("msg: %v", msg)
 	s.State = Established
+	s.Events <- Established_Event
 }
 
 func (s *Session) Established() {
 	event := <-s.Events
 	switch event {
 	case Established_Event:
-		addrs, err := s.Ifi.Addrs()
-		if err != nil {
-			log.Fatalf("failed to get addrs: %v", err)
-		}
+		log.Println("entered established:)")
 		prefixes := make([]netip.Prefix, 0)
-		for _, addr := range addrs {
-			prefix := netip.PrefixFrom(netip.MustParseAddr(addr.String()), 32)
-			prefixes = append(prefixes, prefix)
+		ip, err := local_ip(s.Ifi)
+		if err != nil {
+			log.Fatalf("failed to get local ip: %v", err)
+		}
+		prefixes = append(prefixes, netip.PrefixFrom(netip.MustParseAddr(ip.String()), 24))
+		next_hop := netip.MustParseAddr(strings.Split(s.Conn.LocalAddr().String(), ":")[0])
+		if err != nil {
+			log.Fatalf("failed to marshal: %v", err)
 		}
 		update_msg := update.New(
 			[]netip.Prefix{},
-			[]update.PathAttr{
-				{
-					AttrFlags: update.TRANSITIVE,
-					AttrTypeCode: update.ORIGIN,
-					AttrValue: []byte{update.IGP},
+			[]update.Attrer{
+				update.IGP,
+				update.ASPathSegment{
+					PathSegmentType: update.AS_SEQUENCE,
+					AS:              []update.AS{65001},
 				},
-				{
-					AttrFlags: update.TRANSITIVE,
-					AttrTypeCode: update.AS_PATH,
-					AttrValue: []byte{update.AS_PATH, 0, 1, 0, 1},
-				}
+				update.NEXT_HOP(next_hop),
+				update.LOCAL_PREF(100),
 			},
 			prefixes,
 		)
@@ -135,10 +136,14 @@ func (s *Session) Established() {
 		if err != nil {
 			log.Fatalf("failed to read: %v", err)
 		}
+		s.LocRibIn = make(LocRib)
+		for _, prefix := range msg.NetworkLayerReachable {
+			s.LocRibIn[prefix] = msg.PathAttrs
+		}
 
 		log.Printf("msg: %v", msg)
 	default:
-		log.Print("living in established:)")
+		log.Println("living in established state:)")
 	}
 
 }
@@ -151,7 +156,7 @@ func handle_bgp(ifi net.Interface, active bool) {
 		HoldTime:            180 * time.Second,
 		KeepaliveTime:       60 * time.Second,
 		Ifi:                 ifi,
-		Events:              make(chan Event),
+		Events:              make(chan Event, 10),
 	}
 
 	for {

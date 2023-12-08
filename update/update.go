@@ -12,38 +12,6 @@ import (
 	"github.com/81ueman/local-clos/header"
 )
 
-type AttrFlags uint8
-type TypeCode uint8
-
-const (
-	OPTIONAL        AttrFlags = 0x80
-	TRANSITIVE      AttrFlags = 0x40
-	PARTIAL         AttrFlags = 0x20
-	EXTENDED_LENGTH AttrFlags = 0x10
-)
-
-const (
-	ORIGIN           TypeCode = 1
-	AS_PATH          TypeCode = 2
-	NEXT_HOP         TypeCode = 3
-	MULTI_EXIT_DISC  TypeCode = 4
-	LOCAL_PREF       TypeCode = 5
-	ATOMIC_AGGREGATE TypeCode = 6
-	AGGREGATOR       TypeCode = 7
-)
-
-const (
-	IGP        uint8 = 0
-	EGP        uint8 = 1
-	INCOMPLETE uint8 = 2
-)
-
-type PathAttr struct {
-	AttrFlags    AttrFlags
-	AttrTypeCode TypeCode
-	AttrValue    []byte
-}
-
 type UpdateMessage struct {
 	WithdrawnRoutesLength uint16
 	WithdrawnRoutes       []netip.Prefix
@@ -56,25 +24,30 @@ var (
 	ErrInvalidPrefix = errors.New("invalid prefix")
 )
 
-func New(WithdrawnRoutes []netip.Prefix, PathAttrs []PathAttr, NLR []netip.Prefix) *UpdateMessage {
+func New(WithdrawnRoutes []netip.Prefix, PathAttrs []Attrer, NLR []netip.Prefix) *UpdateMessage {
 	WithdrawnRoutesLength := len(WithdrawnRoutes)
 	TotalPathAttribute := 0
 	for _, attr := range PathAttrs {
 		TotalPathAttribute += 1 // AttrFlags
 		TotalPathAttribute += 1 // AttrTypeCode
-		if IsExtendedLength(attr.AttrFlags) {
+		if IsExtendedLength(attr.ToAttr().AttrFlags) {
 			TotalPathAttribute += 2 // AttrLength
 		} else {
 			TotalPathAttribute += 1 // AttrLength
 		}
-		TotalPathAttribute += len(attr.AttrValue) // AttrValue
+		TotalPathAttribute += len(attr.ToAttr().AttrValue) // AttrValue
+	}
+
+	attrs := make([]PathAttr, 0)
+	for _, attr := range PathAttrs {
+		attrs = append(attrs, attr.ToAttr())
 	}
 
 	return &UpdateMessage{
 		WithdrawnRoutesLength: uint16(WithdrawnRoutesLength),
 		WithdrawnRoutes:       WithdrawnRoutes,
 		TotalPathAttribute:    uint16(TotalPathAttribute),
-		PathAttrs:             PathAttrs,
+		PathAttrs:             attrs,
 		NetworkLayerReachable: NLR,
 	}
 }
