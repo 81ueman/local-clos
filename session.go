@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"time"
 )
@@ -27,6 +28,7 @@ type Session struct {
 	KeepaliveTime       time.Duration
 	Conn                net.Conn
 	Events              chan Event
+	Ctx                 context.Context
 }
 
 type Event string

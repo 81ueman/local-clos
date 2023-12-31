@@ -1,0 +1,4 @@
+alias s1="sudo ip netns exec spine-1"
+alias s2="sudo ip netns exec spine-2"
+alias l1="sudo ip netns exec leaf-1"
+alias l2="sudo ip netns exec leaf-2"

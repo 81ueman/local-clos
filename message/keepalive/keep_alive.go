@@ -1,5 +1,7 @@
 package keepalive
 
+import "io"
+
 type Keepalive struct {
 }
 
@@ -9,4 +11,8 @@ func New() *Keepalive {
 
 func (k *Keepalive) Marshal() ([]byte, error) {
 	return nil, nil
+}
+
+func (k *Keepalive) UnMarshal(r io.Reader) error {
+	return nil
 }

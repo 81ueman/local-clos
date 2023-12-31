@@ -24,4 +24,5 @@ func main() {
 	} else {
 		log.Fatal("usage: ./local-clos [active|passive]")
 	}
+	select {}
 }

@@ -1,13 +1,14 @@
 package main
 
 import (
-	"encoding/binary"
+	"context"
 	"log"
 	"net"
 	"time"
 
-	"github.com/81ueman/local-clos/keepalive"
-	"github.com/81ueman/local-clos/open"
+	"github.com/81ueman/local-clos/message"
+	"github.com/81ueman/local-clos/message/keepalive"
+	"github.com/81ueman/local-clos/message/open"
 )
 
 func (s *Session) Idle(ifi net.Interface, active bool) {
@@ -39,7 +40,7 @@ func (s *Session) Connect() {
 	switch event {
 	case Tcp_CR_Acked:
 		open_msg := open.New(4, 65000, 180, 0)
-		err := send_message(s.Conn, open_msg)
+		err := message.Send_message(s.Conn, open_msg)
 		if err != nil {
 			log.Fatalf("failed to write: %v", err)
 		}
@@ -56,7 +57,7 @@ func (s *Session) Active() {
 	switch event {
 	case Tcp_CR_Acked:
 		open_msg := open.New(4, 65000, 180, 0)
-		err := send_message(s.Conn, open_msg)
+		err := message.Send_message(s.Conn, open_msg)
 		if err != nil {
 			log.Fatalf("failed to send message: %v", err)
 		}
@@ -70,11 +71,18 @@ func (s *Session) Active() {
 
 func (s *Session) OpenSent() {
 	log.Println("session conn: ", s.Conn.RemoteAddr().String())
-	msg := open_MSG{}
-	err := binary.Read(s.Conn, binary.BigEndian, &msg)
+	msg, err := message.UnMarshal(s.Conn)
 	if err != nil {
-		log.Printf("error: %v", err)
+		log.Printf("failed to UnMarshal: %v", err)
 		return
+	}
+	msgtype, err := message.Type(msg)
+	if err != nil {
+		log.Printf("failed to get type: %v", err)
+		return
+	}
+	if msgtype != message.MsgOpen {
+		log.Printf("expected an open message, but got: %v", msgtype)
 	}
 	log.Printf("msg: %v", msg)
 	s.State = OpenConfirm
@@ -82,15 +90,22 @@ func (s *Session) OpenSent() {
 
 func (s *Session) OpenConfirm() {
 	keepalive := keepalive.New()
-	err := send_message(s.Conn, keepalive)
+	err := message.Send_message(s.Conn, keepalive)
 	if err != nil {
 		log.Fatalf("failed to write: %v", err)
 	}
-	var msg keepalive_MSG
-	err = binary.Read(s.Conn, binary.BigEndian, &msg)
+	msg, err := message.UnMarshal(s.Conn)
 	if err != nil {
-		log.Printf("error: %v", err)
+		log.Printf("failed to UnMarshal: %v", err)
 		return
+	}
+	msgtype, err := message.Type(msg)
+	if err != nil {
+		log.Printf("failed to get type: %v", err)
+		return
+	}
+	if msgtype != message.MsgKeepalive {
+		log.Printf("expected a keepalive message, but got: %v", msgtype)
 	}
 	log.Printf("msg: %v", msg)
 	s.State = Established
@@ -100,7 +115,7 @@ func (s *Session) Established() {
 	select {}
 }
 
-func handle_bgp(ifi net.Interface, active bool) {
+func handle_bgp(ctx context.Context, ifi net.Interface, active bool) {
 	session := Session{
 		State:               Idle,
 		ConnectRetryCounter: 0,
@@ -108,6 +123,7 @@ func handle_bgp(ifi net.Interface, active bool) {
 		HoldTime:            180 * time.Second,
 		KeepaliveTime:       60 * time.Second,
 		Events:              make(chan Event),
+		Ctx:                 ctx,
 	}
 
 	for {
@@ -142,7 +158,7 @@ func peers_ifi(active bool) {
 			continue
 		}
 		log.Printf("sending bgp from %v", ifi.Name)
-		go handle_bgp(ifi, active)
+		ctx := context.Background()
+		go handle_bgp(ctx, ifi, active)
 	}
-	select {}
 }

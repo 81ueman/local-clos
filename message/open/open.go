@@ -3,6 +3,7 @@ package open
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 )
 
 type Open struct {
@@ -28,4 +29,12 @@ func (o *Open) Marshal() ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func (o *Open) UnMarshal(r io.Reader) error {
+	err := binary.Read(r, binary.BigEndian, o)
+	if err != nil {
+		return err
+	}
+	return nil
 }
