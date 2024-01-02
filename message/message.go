@@ -8,7 +8,9 @@ import (
 
 	"github.com/81ueman/local-clos/message/header"
 	"github.com/81ueman/local-clos/message/keepalive"
+	notifiacation "github.com/81ueman/local-clos/message/notification"
 	"github.com/81ueman/local-clos/message/open"
+	"github.com/81ueman/local-clos/message/update"
 )
 
 type Message interface {
@@ -16,21 +18,32 @@ type Message interface {
 	UnMarshal(io.Reader) error
 }
 
+var _ Message = &open.Open{}
+var _ Message = &keepalive.Keepalive{}
+var _ Message = &header.Header{}
+var _ Message = &update.Update{}
+
 const HEADER_SIZE uint16 = 19
 
 var ErrNotBGPMessage error = errors.New("not a BGP message")
 
 var (
-	MsgOpen      uint8 = 1
-	MsgKeepalive uint8 = 4
+	MsgTypeOpen         uint8 = 1
+	MsgTypeUpdate       uint8 = 2
+	MsgTypeNotification uint8 = 3
+	MsgTypeKeepalive    uint8 = 4
 )
 
 func Type(m Message) (uint8, error) {
 	switch m.(type) {
 	case *open.Open:
-		return MsgOpen, nil
+		return MsgTypeOpen, nil
+	case *update.Update:
+		return MsgTypeUpdate, nil
+	case *notifiacation.Notification:
+		return MsgTypeNotification, nil
 	case *keepalive.Keepalive:
-		return MsgKeepalive, nil
+		return MsgTypeKeepalive, nil
 	default:
 		return 0, ErrNotBGPMessage
 	}
@@ -55,20 +68,34 @@ func Marshal(m Message) ([]byte, error) {
 
 func UnMarshal(r io.Reader) (Message, error) {
 	var header header.Header
-	err := header.Unmarshal(r)
+	err := header.UnMarshal(r)
 	// Header Validation is not implemented now (just lazy...)
 	if err != nil {
 		return nil, err
 	}
 	switch header.Type {
-	case 1:
+	case MsgTypeOpen:
 		var open open.Open
 		err = open.UnMarshal(r)
 		if err != nil {
 			return nil, err
 		}
 		return &open, nil
-	case 4:
+	case MsgTypeUpdate:
+		var update update.Update
+		err = update.UnMarshal(r)
+		if err != nil {
+			return nil, err
+		}
+		return &update, nil
+	case MsgTypeNotification:
+		var notification notifiacation.Notification
+		err = notification.UnMarshal(r)
+		if err != nil {
+			return nil, err
+		}
+		return &notification, nil
+	case MsgTypeKeepalive:
 		var keepalive keepalive.Keepalive
 		err = keepalive.UnMarshal(r)
 		if err != nil {

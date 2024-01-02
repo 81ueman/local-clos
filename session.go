@@ -29,6 +29,7 @@ type Session struct {
 	Conn                net.Conn
 	Events              chan Event
 	Ctx                 context.Context
+	Cancel              context.CancelFunc
 }
 
 type Event string

@@ -18,9 +18,9 @@ func main() {
 	go maintain_arptable()
 
 	if mode == "active" {
-		peers_ifi(ACTIVE)
+		_, _ = peers_ifi(ACTIVE)
 	} else if mode == "passive" {
-		peers_ifi(PASSIVE)
+		_, _ = peers_ifi(PASSIVE)
 	} else {
 		log.Fatal("usage: ./local-clos [active|passive]")
 	}

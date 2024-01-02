@@ -35,7 +35,7 @@ func (h *Header) Marshal() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (h *Header) Unmarshal(r io.Reader) error {
+func (h *Header) UnMarshal(r io.Reader) error {
 	err := binary.Read(r, binary.BigEndian, h)
 	if err != nil {
 		return err
