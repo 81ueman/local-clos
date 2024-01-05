@@ -1,8 +1,11 @@
 package update
 
 import (
+	"bytes"
 	"encoding/binary"
+	"io"
 	"net/netip"
+	"reflect"
 	"testing"
 )
 
@@ -189,4 +192,69 @@ func TestMarshalUpdate(t *testing.T) {
 		})
 	}
 
+}
+
+func TestUnMarshal(t *testing.T) {
+	type args struct {
+		name   string
+		r      io.Reader
+		length uint16
+		want   Update
+	}
+	tests := []args{
+		{
+			name: "No Withdraw",
+			r: bytes.NewReader([]byte{
+				0, 0, // withdrawn routes length
+				0, 29, // total path attr length
+				byte(AttrFlagsTransitive), byte(AttrTypeOrigin), 1, byte(OriginIGP), //flag, type, length, origin
+				byte(AttrFlagsTransitive), byte(AttrTypeASPath), 8, // flag, type, length
+				byte(VALUE_SEGMENT_AS_SEQUENCE), 3, // value segment type, number of ASes
+				0, 0,
+				0, 1,
+				0, 2, // ASes
+				byte(AttrFlagsTransitive), byte(AttrTypeNextHop), 4, // flag, type, length
+				1, 2, 3, 4, // next hop
+				byte(AttrFlagsTransitive), byte(AttrTypeLocalPref), 4, // flag, type, length
+				0, 0, 0, 1, // local pref
+				8, 10, // prefix 10.0.0.0/8
+			}),
+			length: 35,
+			want: Update{
+				WithdrawnRoutes:                     []netip.Prefix{},
+				PathAttrOrigin:                      Origin(OriginIGP),
+				PathAttrASPath:                      AS_PATH{VALUE_SEGMENT_AS_SEQUENCE, []uint16{0, 1, 2}},
+				PathAttrNextHop:                     NEXT_HOP(netip.MustParseAddr("1.2.3.4")),
+				PathAttrLocalPref:                   LOCAL_PREF(1),
+				NetworkLayerReachabilityInformation: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+			},
+		},
+	}
+	for _, tt := range tests {
+		var u Update
+		err := u.UnMarshal(tt.r, tt.length)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// tried to use reflect.DeepEqual, but it failed even for the correct case.
+		// so, compare each field one by one.
+		if reflect.DeepEqual(tt.want.WithdrawnRoutes, u.WithdrawnRoutes) {
+			t.Errorf("invalid withdrawn routes: got %v, want %v", u.WithdrawnRoutes, tt.want.WithdrawnRoutes)
+		}
+		if tt.want.PathAttrOrigin != u.PathAttrOrigin {
+			t.Errorf("invalid origin: got %v, want %v", u.PathAttrOrigin, tt.want.PathAttrOrigin)
+		}
+		if !reflect.DeepEqual(tt.want.PathAttrASPath, u.PathAttrASPath) {
+			t.Errorf("invalid AS path: got %v, want %v", u.PathAttrASPath, tt.want.PathAttrASPath)
+		}
+		if tt.want.PathAttrNextHop != u.PathAttrNextHop {
+			t.Errorf("invalid next hop: got %v, want %v", u.PathAttrNextHop, tt.want.PathAttrNextHop)
+		}
+		if tt.want.PathAttrLocalPref != u.PathAttrLocalPref {
+			t.Errorf("invalid local pref: got %v, want %v", u.PathAttrLocalPref, tt.want.PathAttrLocalPref)
+		}
+		if !reflect.DeepEqual(tt.want.NetworkLayerReachabilityInformation, u.NetworkLayerReachabilityInformation) {
+			t.Errorf("invalid NLRI: got %v, want %v", u.NetworkLayerReachabilityInformation, tt.want.NetworkLayerReachabilityInformation)
+		}
+	}
 }

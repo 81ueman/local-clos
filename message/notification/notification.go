@@ -13,6 +13,6 @@ func (n *Notification) Marshal() ([]byte, error) {
 	return nil, nil
 }
 
-func (n *Notification) UnMarshal(r io.Reader) error {
+func (n *Notification) UnMarshal(r io.Reader, l uint16) error {
 	return nil
 }

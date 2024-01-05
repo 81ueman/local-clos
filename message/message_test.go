@@ -61,7 +61,7 @@ func (d *dummy) Marshal() ([]byte, error) {
 	return []byte{}, nil
 }
 
-func (d *dummy) UnMarshal(r io.Reader) error {
+func (d *dummy) UnMarshal(r io.Reader, l uint16) error {
 	return nil
 }
 

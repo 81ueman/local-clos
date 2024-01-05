@@ -1,6 +1,7 @@
 package update
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -15,6 +16,22 @@ var (
 	AttrFlagsPartial        AttrFlags = 0x20
 	AttrFlagsExtendedLength AttrFlags = 0x10
 )
+
+func (a *AttrFlags) Optional() bool {
+	return (*a & AttrFlagsOptional) != 0
+}
+
+func (a *AttrFlags) Transitive() bool {
+	return (*a & AttrFlagsTransitive) != 0
+}
+
+func (a *AttrFlags) Partial() bool {
+	return (*a & AttrFlagsPartial) != 0
+}
+
+func (a *AttrFlags) ExtendedLength() bool {
+	return (*a & AttrFlagsExtendedLength) != 0
+}
 
 type AttrType uint8
 
@@ -127,6 +144,8 @@ func prefixToBytes(prefix netip.Prefix) ([]byte, error) {
 
 }
 
+// binだとsliceのコピーが発生して遅いかもしれないが実装の簡略化を優先
+// bytes.Bufferを使ったほうがパフォーマンスは良いかもしれない
 func (u *Update) Marshal() ([]byte, error) {
 	var bin []byte
 	bin = binary.BigEndian.AppendUint16(bin, uint16(len(u.WithdrawnRoutes)))
@@ -168,9 +187,108 @@ func (u *Update) Marshal() ([]byte, error) {
 		bin = append(bin, b...)
 	}
 	return bin, nil
-
 }
 
-func (u *Update) UnMarshal(r io.Reader) error {
+func (u *Update) UnMarshal(r io.Reader, length uint16) error {
+	var withdrawnLength uint16
+	var err error
+	if err = binary.Read(r, binary.BigEndian, &withdrawnLength); err != nil {
+		return err
+	}
+	withdrawnRoutesBin := make([]byte, withdrawnLength)
+	io.ReadFull(r, withdrawnRoutesBin)
+	for i := 0; i < int(withdrawnLength); {
+		prefixBin := make([]byte, 5)
+		prefixLen := withdrawnRoutesBin[i]
+		copy(prefixBin, withdrawnRoutesBin[i+1:i+1+(int(prefixLen)-1)/8+1])
+		prefixBin[4] = prefixLen
+		var prefix netip.Prefix
+		err := prefix.UnmarshalBinary(prefixBin)
+		if err != nil {
+			return err
+		}
+		u.WithdrawnRoutes = append(u.WithdrawnRoutes, prefix)
+		i += 1 + len(prefixBin)
+	}
+
+	var pathAttrLen uint16
+	err = binary.Read(r, binary.BigEndian, &pathAttrLen)
+	if err != nil {
+		return err
+	}
+	pathAttrBin := make([]byte, pathAttrLen)
+	io.ReadFull(r, pathAttrBin)
+	for i := 0; i < int(pathAttrLen); {
+		attrflags := AttrFlags(pathAttrBin[i])
+		i += 1
+		attrType := AttrType(pathAttrBin[i])
+		i += 1
+		var attrLen uint
+		if attrflags.ExtendedLength() {
+			attrLen = uint(binary.BigEndian.Uint16(pathAttrBin[i:]))
+			i += 2
+		} else {
+			attrLen = uint(pathAttrBin[i])
+			i += 1
+		}
+
+		switch attrType {
+		case AttrTypeOrigin:
+			u.PathAttrOrigin = Origin(pathAttrBin[i])
+			i += 1
+			if attrLen != 1 {
+				return fmt.Errorf("invalid origin length: %v", attrLen)
+			}
+		case AttrTypeASPath:
+			u.PathAttrASPath.VALUE_SEGMENT = VALUE_SEGMENT_TYPE(pathAttrBin[i])
+			i += 1
+			segmentLen := pathAttrBin[i]
+			i += 1
+			for j := 0; j < int(segmentLen); j++ {
+				as := binary.BigEndian.Uint16(pathAttrBin[i+j*2:])
+				u.PathAttrASPath.AS_SEQUENCE = append(u.PathAttrASPath.AS_SEQUENCE, as)
+			}
+			i += int(segmentLen) * 2
+			if attrLen != uint(1+1+2*segmentLen) {
+				return fmt.Errorf("invalid aspath length: %v", attrLen)
+			}
+		case AttrTypeNextHop:
+			var nexthop netip.Addr
+			err := nexthop.UnmarshalBinary(pathAttrBin[i : i+4])
+			i += 4
+			if err != nil {
+				return err
+			}
+			u.PathAttrNextHop = NEXT_HOP(nexthop)
+			if attrLen != 4 {
+				return fmt.Errorf("invalid nexthop length: %v", attrLen)
+			}
+		case AttrTypeLocalPref:
+			u.PathAttrLocalPref = LOCAL_PREF(binary.BigEndian.Uint32(pathAttrBin[i:]))
+			i += 4
+			if attrLen != 4 {
+				return fmt.Errorf("invalid localpref length: %v", attrLen)
+			}
+		}
+	}
+	NLRlength := length - 2 - withdrawnLength - 2 - pathAttrLen
+	rd := bufio.NewReader(r)
+	for i := 0; i < int(NLRlength); {
+		plen, err := rd.ReadByte()
+		if err != nil {
+			return err
+		}
+		i += 1
+
+		prefixBin := make([]byte, 5)
+		io.ReadFull(rd, prefixBin[:(plen-1)/8+1])
+		i += int((plen-1)/8 + 1)
+		prefixBin[4] = plen
+		var prefix netip.Prefix
+		if err = prefix.UnmarshalBinary(prefixBin); err != nil {
+			return err
+		}
+		u.NetworkLayerReachabilityInformation = append(u.NetworkLayerReachabilityInformation, prefix)
+	}
 	return nil
 }

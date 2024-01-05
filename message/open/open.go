@@ -3,7 +3,12 @@ package open
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"io"
+)
+
+var (
+	ErrInvalidLength error = errors.New("invalid length")
 )
 
 type Open struct {
@@ -31,7 +36,8 @@ func (o *Open) Marshal() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (o *Open) UnMarshal(r io.Reader) error {
+func (o *Open) UnMarshal(r io.Reader, l uint16) error {
+	// length check is ignored now(just lazy)
 	err := binary.Read(r, binary.BigEndian, o)
 	if err != nil {
 		return err

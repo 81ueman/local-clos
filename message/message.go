@@ -15,7 +15,7 @@ import (
 
 type Message interface {
 	Marshal() ([]byte, error)
-	UnMarshal(io.Reader) error
+	UnMarshal(r io.Reader, len uint16) error
 }
 
 var _ Message = &open.Open{}
@@ -68,36 +68,37 @@ func Marshal(m Message) ([]byte, error) {
 
 func UnMarshal(r io.Reader) (Message, error) {
 	var header header.Header
-	err := header.UnMarshal(r)
+	err := header.UnMarshal(r, HEADER_SIZE)
 	// Header Validation is not implemented now (just lazy...)
 	if err != nil {
 		return nil, err
 	}
+	l := header.Length
 	switch header.Type {
 	case MsgTypeOpen:
 		var open open.Open
-		err = open.UnMarshal(r)
+		err = open.UnMarshal(r, l)
 		if err != nil {
 			return nil, err
 		}
 		return &open, nil
 	case MsgTypeUpdate:
 		var update update.Update
-		err = update.UnMarshal(r)
+		err = update.UnMarshal(r, l)
 		if err != nil {
 			return nil, err
 		}
 		return &update, nil
 	case MsgTypeNotification:
 		var notification notifiacation.Notification
-		err = notification.UnMarshal(r)
+		err = notification.UnMarshal(r, l)
 		if err != nil {
 			return nil, err
 		}
 		return &notification, nil
 	case MsgTypeKeepalive:
 		var keepalive keepalive.Keepalive
-		err = keepalive.UnMarshal(r)
+		err = keepalive.UnMarshal(r, l)
 		if err != nil {
 			return nil, err
 		}
