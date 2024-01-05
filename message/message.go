@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/81ueman/local-clos/message/header"
 	"github.com/81ueman/local-clos/message/keepalive"
@@ -69,11 +70,12 @@ func Marshal(m Message) ([]byte, error) {
 func UnMarshal(r io.Reader) (Message, error) {
 	var header header.Header
 	err := header.UnMarshal(r, HEADER_SIZE)
+	log.Printf("unmarshaled header: %v", header)
 	// Header Validation is not implemented now (just lazy...)
 	if err != nil {
 		return nil, err
 	}
-	l := header.Length
+	l := header.Length - HEADER_SIZE
 	switch header.Type {
 	case MsgTypeOpen:
 		var open open.Open

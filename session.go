@@ -26,7 +26,9 @@ type Session struct {
 	HoldTime            time.Duration
 	KeepaliveTimer      time.Timer
 	KeepaliveTime       time.Duration
+	Ifi                 net.Interface
 	Conn                net.Conn
+	Addr                net.Addr
 	Events              chan Event
 	Ctx                 context.Context
 	Cancel              context.CancelFunc

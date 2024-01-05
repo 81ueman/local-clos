@@ -4,11 +4,13 @@ import (
 	"context"
 	"log"
 	"net"
+	"net/netip"
 	"time"
 
 	"github.com/81ueman/local-clos/message"
 	"github.com/81ueman/local-clos/message/keepalive"
 	"github.com/81ueman/local-clos/message/open"
+	"github.com/81ueman/local-clos/message/update"
 )
 
 func (s *Session) Idle(ifi net.Interface, active bool) {
@@ -19,6 +21,7 @@ func (s *Session) Idle(ifi net.Interface, active bool) {
 	} else {
 		conn, err = wait_tcp(ifi)
 	}
+	log.Printf("conn: %v", conn)
 	if err != nil {
 		log.Printf("failed to handle tcp connection: %v", err)
 		s.Cancel()
@@ -28,6 +31,7 @@ func (s *Session) Idle(ifi net.Interface, active bool) {
 	s.Conn = conn
 	s.Events <- Tcp_CR_Acked
 
+	log.Printf("Idle: %v", s.State)
 	if active {
 		s.State = Connect
 	} else {
@@ -124,7 +128,32 @@ func (s *Session) OpenConfirm() {
 }
 
 func (s *Session) Established() {
-	select {}
+	net_ip, err := local_ip(s.Ifi)
+	if err != nil {
+		log.Fatalf("failed to get local ip: %v", err)
+	}
+	netip_ip, err := netip.ParseAddr(net_ip.String())
+	if err != nil {
+		log.Fatalf("failed to parse netip addr: %v", err)
+	}
+	UpdateMsg := update.Update{
+		WithdrawnRoutes: []netip.Prefix{},
+		PathAttrOrigin:  update.Origin(update.OriginIGP),
+		PathAttrASPath: update.AS_PATH{
+			VALUE_SEGMENT: update.VALUE_SEGMENT_AS_SEQUENCE,
+			AS_SEQUENCE:   []uint16{65000},
+		},
+		PathAttrNextHop:   update.NEXT_HOP(netip_ip),
+		PathAttrLocalPref: update.LOCAL_PREF(100),
+	}
+	message.Send_message(s.Conn, &UpdateMsg)
+	msg, err := message.UnMarshal(s.Conn)
+	if err != nil {
+		log.Printf("failed to UnMarshal: %v", err)
+		s.Cancel()
+		return
+	}
+	log.Printf("msg: %v", msg)
 }
 
 func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interface, active bool) {
@@ -134,7 +163,8 @@ func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interfac
 		ConnectRetryTime:    120 * time.Second,
 		HoldTime:            180 * time.Second,
 		KeepaliveTime:       60 * time.Second,
-		Events:              make(chan Event),
+		Events:              make(chan Event, 2),
+		Ifi:                 ifi,
 		Ctx:                 ctx,
 		Cancel:              cancel,
 	}
@@ -163,7 +193,6 @@ func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interfac
 				log.Fatalf("unknown state: %v", session.State)
 			}
 			time.Sleep(1 * time.Second)
-
 		}
 	}
 }
