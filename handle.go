@@ -4,24 +4,34 @@ import (
 	"context"
 	"log"
 	"net"
-	"net/netip"
 	"time"
 
 	"github.com/81ueman/local-clos/message"
 	"github.com/81ueman/local-clos/message/keepalive"
 	"github.com/81ueman/local-clos/message/open"
-	"github.com/81ueman/local-clos/message/update"
 )
 
-func (s *Session) Idle(ifi net.Interface, active bool) {
+func (s *Session) receiveMessage() {
+	for {
+		msg, err := message.UnMarshal(s.Conn)
+		if err != nil {
+			log.Printf("failed to UnMarshal: %v", err)
+			s.Cancel()
+			return
+		}
+		log.Printf("msg: %v", msg)
+		s.MsgCh <- msg
+	}
+}
+
+func (s *Session) Idle() {
 	var conn net.Conn
 	var err error
-	if active {
-		conn, err = start_tcp(ifi)
+	if s.ActiveMode {
+		conn, err = start_tcp(s.Ifi)
 	} else {
-		conn, err = wait_tcp(ifi)
+		conn, err = wait_tcp(s.Ifi)
 	}
-	log.Printf("conn: %v", conn)
 	if err != nil {
 		log.Printf("failed to handle tcp connection: %v", err)
 		s.Cancel()
@@ -29,10 +39,11 @@ func (s *Session) Idle(ifi net.Interface, active bool) {
 		return
 	}
 	s.Conn = conn
+	go s.receiveMessage()
 	s.Events <- Tcp_CR_Acked
 
 	log.Printf("Idle: %v", s.State)
-	if active {
+	if s.ActiveMode {
 		s.State = Connect
 	} else {
 		s.State = Active
@@ -43,7 +54,7 @@ func (s *Session) Connect() {
 	event := <-s.Events
 	switch event {
 	case Tcp_CR_Acked:
-		open_msg := open.New(4, 65000, 180, 0)
+		open_msg := open.New(4, s.AS, 180, 0)
 		err := message.Send_message(s.Conn, open_msg)
 		if err != nil {
 			s.Cancel()
@@ -80,12 +91,8 @@ func (s *Session) Active() {
 }
 
 func (s *Session) OpenSent() {
-	log.Println("session conn: ", s.Conn.RemoteAddr().String())
-	msg, err := message.UnMarshal(s.Conn)
-	if err != nil {
-		log.Printf("failed to UnMarshal: %v", err)
-		return
-	}
+	log.Println("s conn: ", s.Conn.RemoteAddr().String())
+	msg := <-s.MsgCh
 	msgtype, err := message.Type(msg)
 	if err != nil {
 		log.Printf("failed to get type: %v", err)
@@ -106,12 +113,7 @@ func (s *Session) OpenConfirm() {
 		s.Cancel()
 		return
 	}
-	msg, err := message.UnMarshal(s.Conn)
-	if err != nil {
-		log.Printf("failed to UnMarshal: %v", err)
-		s.Cancel()
-		return
-	}
+	msg := <-s.MsgCh
 	msgtype, err := message.Type(msg)
 	if err != nil {
 		log.Printf("failed to get type: %v", err)
@@ -124,47 +126,51 @@ func (s *Session) OpenConfirm() {
 		return
 	}
 	log.Printf("msg: %v", msg)
+	s.AdjRibCh <- s.AdjRIBsIn
 	s.State = Established
 }
 
 func (s *Session) Established() {
-	net_ip, err := local_ip(s.Ifi)
-	if err != nil {
-		log.Fatalf("failed to get local ip: %v", err)
+	select {
+	case locrib := <-s.LocRibCh:
+		log.Printf("ribAdj: %v", locrib)
+	case msg := <-s.MsgCh:
+		msgtype, err := message.Type(msg)
+		if err != nil {
+			log.Printf("failed to get type: %v", err)
+			s.Cancel()
+			return
+		}
+		if msgtype != message.MsgTypeUpdate {
+			log.Printf("expected an update message, but got: %v", msgtype)
+			s.Cancel()
+			return
+		}
+		log.Printf("msg: %v", msg)
 	}
-	netip_ip, err := netip.ParseAddr(net_ip.String())
-	if err != nil {
-		log.Fatalf("failed to parse netip addr: %v", err)
-	}
-	UpdateMsg := update.Update{
-		WithdrawnRoutes: []netip.Prefix{},
-		PathAttrOrigin:  update.Origin(update.OriginIGP),
-		PathAttrASPath: update.AS_PATH{
-			VALUE_SEGMENT: update.VALUE_SEGMENT_AS_SEQUENCE,
-			AS_SEQUENCE:   []uint16{65000},
-		},
-		PathAttrNextHop:   update.NEXT_HOP(netip_ip),
-		PathAttrLocalPref: update.LOCAL_PREF(100),
-	}
-	message.Send_message(s.Conn, &UpdateMsg)
-	msg, err := message.UnMarshal(s.Conn)
-	if err != nil {
-		log.Printf("failed to UnMarshal: %v", err)
-		s.Cancel()
-		return
-	}
-	log.Printf("msg: %v", msg)
 }
 
-func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interface, active bool) {
-	session := Session{
+func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interface, active bool, AS uint16, RibAdjInCh chan RibAdj, LocRibCh chan RibAdj) {
+	netipIp, err := localNetipIp(ifi)
+	if err != nil {
+		log.Fatalf("failed to get local netip ip: %v", err)
+		cancel()
+		return
+	}
+	s := Session{
 		State:               Idle,
 		ConnectRetryCounter: 0,
 		ConnectRetryTime:    120 * time.Second,
 		HoldTime:            180 * time.Second,
 		KeepaliveTime:       60 * time.Second,
 		Events:              make(chan Event, 2),
+		ActiveMode:          active,
 		Ifi:                 ifi,
+		NetipAddr:           netipIp,
+		AS:                  AS,
+		MsgCh:               make(chan message.Message, 10), //magic number to be determined
+		AdjRibCh:            RibAdjInCh,
+		LocRibCh:            LocRibCh,
 		Ctx:                 ctx,
 		Cancel:              cancel,
 	}
@@ -173,34 +179,34 @@ func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interfac
 		select {
 		case <-ctx.Done():
 			log.Println("handle_bgp finished")
+			s.Conn.Close()
 			return
 		default:
-			log.Println("session state: ", session.State)
-			switch session.State {
+			log.Println("session state: ", s.State)
+			switch s.State {
 			case Idle:
-				session.Idle(ifi, active)
+				s.Idle()
 			case Connect:
-				session.Connect()
+				s.Connect()
 			case Active:
-				session.Active()
+				s.Active()
 			case OpenSent:
-				session.OpenSent()
+				s.OpenSent()
 			case OpenConfirm:
-				session.OpenConfirm()
+				s.OpenConfirm()
 			case Established:
-				session.Established()
+				s.Established()
 			default:
-				log.Fatalf("unknown state: %v", session.State)
+				log.Fatalf("unknown state: %v", s.State)
 			}
 			time.Sleep(1 * time.Second)
 		}
 	}
 }
 
-func peers_ifi(active bool) ([]context.Context, []context.CancelFunc) {
+func peers_ifi(active bool, AS uint16) []Peer {
 	ifis, err := net.Interfaces()
-	ctxs := make([]context.Context, len(ifis))
-	cancels := make([]context.CancelFunc, len(ifis))
+	peers := make([]Peer, 0, len(ifis))
 	if err != nil {
 		log.Fatalf("failed to get interfaces: %v", err)
 	}
@@ -210,9 +216,16 @@ func peers_ifi(active bool) ([]context.Context, []context.CancelFunc) {
 		}
 		log.Printf("sending bgp from %v", ifi.Name)
 		ctx, cancel := context.WithCancel(context.Background())
-		ctxs = append(ctxs, ctx)
-		cancels = append(cancels, cancel)
-		go handle_bgp(ctx, cancel, ifi, active)
+		RibAdjInCh := make(chan RibAdj)
+		LocRibCh := make(chan RibAdj)
+
+		peer := Peer{
+			RibAdjIn:   make(RibAdj),
+			RibAdjInCh: RibAdjInCh,
+			LocRibCh:   LocRibCh,
+		}
+		peers = append(peers, peer)
+		go handle_bgp(ctx, cancel, ifi, active, AS, RibAdjInCh, LocRibCh)
 	}
-	return ctxs, cancels
+	return peers
 }

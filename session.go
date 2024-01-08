@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"net"
+	"net/netip"
 	"time"
+
+	"github.com/81ueman/local-clos/message"
 )
 
 type State string
@@ -26,10 +29,18 @@ type Session struct {
 	HoldTime            time.Duration
 	KeepaliveTimer      time.Timer
 	KeepaliveTime       time.Duration
+	ActiveMode          bool
 	Ifi                 net.Interface
+	NetipAddr           netip.Addr
 	Conn                net.Conn
+	MsgCh               chan message.Message
 	Addr                net.Addr
 	Events              chan Event
+	AS                  uint16
+	AdjRIBsIn           RibAdj
+	AdjRIBsOut          RibAdj
+	AdjRibCh            chan<- RibAdj
+	LocRibCh            <-chan RibAdj
 	Ctx                 context.Context
 	Cancel              context.CancelFunc
 }

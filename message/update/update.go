@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"net/netip"
 )
 
@@ -158,6 +157,7 @@ func (u *Update) Marshal() ([]byte, error) {
 		bin = append(bin, b...)
 	}
 
+	//TODO: 必須属性についてはzero valueでないことを確認したい
 	originBin, err := u.PathAttrOrigin.marshal()
 	if err != nil {
 		return nil, err
@@ -196,7 +196,6 @@ func (u *Update) UnMarshal(r io.Reader, length uint16) error {
 	if err = binary.Read(r, binary.BigEndian, &withdrawnLength); err != nil {
 		return err
 	}
-	log.Printf("withdrawnLength: %v", withdrawnLength)
 	withdrawnRoutesBin := make([]byte, withdrawnLength)
 	io.ReadFull(r, withdrawnRoutesBin)
 	for i := 0; i < int(withdrawnLength); {
@@ -212,14 +211,12 @@ func (u *Update) UnMarshal(r io.Reader, length uint16) error {
 		u.WithdrawnRoutes = append(u.WithdrawnRoutes, prefix)
 		i += 1 + len(prefixBin)
 	}
-	log.Printf("withdrawnRoutes: %v", u.WithdrawnRoutes)
 
 	var pathAttrLen uint16
 	err = binary.Read(r, binary.BigEndian, &pathAttrLen)
 	if err != nil {
 		return err
 	}
-	log.Printf("pathAttrLen: %v", pathAttrLen)
 	pathAttrBin := make([]byte, pathAttrLen)
 	io.ReadFull(r, pathAttrBin)
 	for i := 0; i < int(pathAttrLen); {
@@ -235,7 +232,6 @@ func (u *Update) UnMarshal(r io.Reader, length uint16) error {
 			attrLen = uint(pathAttrBin[i])
 			i += 1
 		}
-		log.Printf("attrflags: %v, attrType: %v, attrLen: %v", attrflags, attrType, attrLen)
 
 		switch attrType {
 		case AttrTypeOrigin:
@@ -277,12 +273,10 @@ func (u *Update) UnMarshal(r io.Reader, length uint16) error {
 		}
 	}
 	NLRlength := length - 2 - withdrawnLength - 2 - pathAttrLen
-	log.Printf("NLRlength: %v", NLRlength)
-	// 最初からbufioでいいじゃん
+	//TODO:最初からbufioにしよう
 	rd := bufio.NewReader(r)
 	for i := 0; i < int(NLRlength); {
 		plen, err := rd.ReadByte()
-		log.Printf("plen: %v", plen)
 		if err != nil {
 			return err
 		}

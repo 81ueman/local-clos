@@ -4,12 +4,25 @@ import (
 	"errors"
 	"log"
 	"net"
+	"net/netip"
 	"os/exec"
 	"strings"
 	"time"
 )
 
 var errArptableNotFound = errors.New("no arp table found")
+
+func localNetipIp(ifi net.Interface) (netip.Addr, error) {
+	net_ip, err := local_ip(ifi)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	addr, err := netip.ParseAddr(net_ip.String())
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	return addr, nil
+}
 
 func local_ip(ifi net.Interface) (net.IP, error) {
 	addrs, err := ifi.Addrs()
