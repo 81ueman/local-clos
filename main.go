@@ -30,9 +30,15 @@ func main() {
 	for _, peer := range peers {
 		fmt.Printf("%v\n", peer)
 	}
+	adjConnected, err := AdjFromLocal(uint16(*AS))
+	log.Printf("adjConnected: %v", adjConnected)
+	if err != nil {
+		log.Fatalf("failed to get adj from local: %v", err)
+	}
 	LocRib := LocRib{
-		adjBest: make(RibAdj),
-		peers:   peers,
+		adjBest:      adjConnected,
+		adjConnected: adjConnected,
+		peers:        peers,
 	}
 	for {
 		LocRib.Handle()

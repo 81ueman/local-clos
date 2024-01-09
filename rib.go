@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net"
 	"net/netip"
 	"reflect"
 
@@ -35,6 +36,83 @@ func (R *RibAdj) Update(msg update.Update) {
 	}
 }
 
+// prefix s.t.
+// prefix in R && prefix not in other
+// or
+// prefix in R && prefix in other && R[prefix] != other[prefix]
+func (R *RibAdj) diff(other RibAdj) (RibAdj, []netip.Prefix) {
+	diff := make(RibAdj)
+	deleteroute := make([]netip.Prefix, 0)
+	for prefix, entry := range *R {
+		otherEntry, ok := other[prefix]
+		if !ok {
+			diff[prefix] = entry
+		}
+		if ok && !reflect.DeepEqual(entry, otherEntry) {
+			diff[prefix] = entry
+		}
+	}
+	for prefix := range other {
+		_, ok := (*R)[prefix]
+		if !ok {
+			deleteroute = append(deleteroute, prefix)
+		}
+	}
+	return diff, deleteroute
+}
+
+func (R *RibAdj) ToUpdateMsg(adjRibOut RibAdj) []update.Update {
+	ribdiff, deleteroute := R.diff(adjRibOut)
+	log.Printf("ribdiff: %v", ribdiff)
+	msgs := make([]update.Update, 0)
+	for prefix, entry := range ribdiff {
+		msg := update.Update{
+			NetworkLayerReachabilityInformation: []netip.Prefix{prefix},
+			PathAttrOrigin:                      entry.ORIGIN,
+			PathAttrASPath:                      entry.AS_PATH,
+			PathAttrNextHop:                     entry.NEXT_HOP,
+			PathAttrLocalPref:                   entry.LOCAL_PREF,
+		}
+		msgs = append(msgs, msg)
+	}
+	deletemsg := update.Update{
+		WithdrawnRoutes: deleteroute,
+	}
+	msgs = append(msgs, deletemsg)
+	return msgs
+}
+
+func AdjFromLocal(AS uint16) (RibAdj, error) {
+	ifis, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	adjBest := make(RibAdj)
+	for _, ifi := range ifis {
+		prefix, err := IfiToPrefix(ifi)
+		if err != nil {
+			log.Printf("failed to get prefix: %v", err)
+			continue
+		}
+		netipIP, err := localNetipIp(ifi)
+		if err != nil {
+			log.Printf("failed to get local netip ip: %v", err)
+			continue
+		}
+
+		adjBest[prefix] = RibAdjEntry{
+			ORIGIN: update.OriginIGP,
+			AS_PATH: update.AS_PATH{
+				VALUE_SEGMENT: update.VALUE_SEGMENT_AS_SEQUENCE,
+				AS_SEQUENCE:   []uint16{AS},
+			},
+			NEXT_HOP:   update.NEXT_HOP(netipIP),
+			LOCAL_PREF: update.LOCAL_PREF(100),
+		}
+	}
+	return adjBest, nil
+}
+
 type Peer struct {
 	RibAdjIn   RibAdj
 	RibAdjInCh <-chan RibAdj
@@ -42,12 +120,13 @@ type Peer struct {
 }
 
 type LocRib struct {
-	adjBest RibAdj
-	peers   []Peer
+	adjBest      RibAdj
+	adjConnected RibAdj
+	peers        []Peer
 }
 
 // compare two RibAdjEntry and return best one
-func compareRibAdjEntry(a, b RibAdjEntry) RibAdjEntry {
+func betterEntry(a, b RibAdjEntry) RibAdjEntry {
 	if a.LOCAL_PREF > b.LOCAL_PREF {
 		return a
 	} else if a.LOCAL_PREF < b.LOCAL_PREF {
@@ -67,15 +146,16 @@ func compareRibAdjEntry(a, b RibAdjEntry) RibAdjEntry {
 	return a
 }
 
-func (l *LocRib) selectBestPath() {
-	l.adjBest = make(RibAdj)
+func (l *LocRib) updateBestPath() {
+	l.adjBest = l.adjConnected
+	log.Printf("updating adjBest: %v", l.adjBest)
 	for _, peer := range l.peers {
 		for prefix, entry := range peer.RibAdjIn {
 			_, ok := l.adjBest[prefix]
 			if !ok {
 				l.adjBest[prefix] = entry
 			} else {
-				l.adjBest[prefix] = compareRibAdjEntry(l.adjBest[prefix], entry)
+				l.adjBest[prefix] = betterEntry(l.adjBest[prefix], entry)
 			}
 		}
 	}
@@ -92,7 +172,8 @@ func (L *LocRib) Handle() {
 		return
 	}
 	L.peers[chosen].RibAdjIn = value.Interface().(RibAdj)
-	L.selectBestPath()
+	L.updateBestPath()
+	log.Printf("adjBest: %v", L.adjBest)
 	for _, peer := range L.peers {
 		peer.LocRibCh <- L.adjBest
 	}

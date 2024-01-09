@@ -12,6 +12,24 @@ import (
 
 var errArptableNotFound = errors.New("no arp table found")
 
+func IfiToPrefix(ifi net.Interface) (netip.Prefix, error) {
+	addrs, err := ifi.Addrs()
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	for _, addr := range addrs {
+		prefix, err := netip.ParsePrefix(addr.String())
+		if err != nil {
+			continue
+		}
+		if !prefix.Addr().Is4() {
+			continue
+		}
+		return prefix, nil
+	}
+	return netip.Prefix{}, errors.New("no ipv4 addr found")
+}
+
 func localNetipIp(ifi net.Interface) (netip.Addr, error) {
 	net_ip, err := local_ip(ifi)
 	if err != nil {

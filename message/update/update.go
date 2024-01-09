@@ -158,6 +158,11 @@ func (u *Update) Marshal() ([]byte, error) {
 	}
 
 	//TODO: 必須属性についてはzero valueでないことを確認したい
+	if len(u.NetworkLayerReachabilityInformation) == 0 {
+		TotalPathAttrLen := 0
+		bin = binary.BigEndian.AppendUint16(bin, uint16(TotalPathAttrLen))
+		return bin, nil
+	}
 	originBin, err := u.PathAttrOrigin.marshal()
 	if err != nil {
 		return nil, err

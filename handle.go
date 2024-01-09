@@ -134,6 +134,18 @@ func (s *Session) Established() {
 	select {
 	case locrib := <-s.LocRibCh:
 		log.Printf("ribAdj: %v", locrib)
+		//compare locrib with adjribout and send update message
+		msgs := locrib.ToUpdateMsg(s.AdjRIBsOut)
+		s.AdjRIBsOut = locrib
+		log.Printf("adjribout: %v", s.AdjRIBsOut)
+		for _, msg := range msgs {
+			err := message.Send_message(s.Conn, &msg) //TODO:pointerなの変だな
+			if err != nil {
+				log.Printf("failed to write: %v", err)
+				s.Cancel()
+				return
+			}
+		}
 	case msg := <-s.MsgCh:
 		msgtype, err := message.Type(msg)
 		if err != nil {
@@ -150,6 +162,7 @@ func (s *Session) Established() {
 	}
 }
 
+// TODO:引数増えてきたからまとめるか何かしたい
 func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interface, active bool, AS uint16, RibAdjInCh chan RibAdj, LocRibCh chan RibAdj) {
 	netipIp, err := localNetipIp(ifi)
 	if err != nil {
@@ -179,7 +192,6 @@ func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interfac
 		select {
 		case <-ctx.Done():
 			log.Println("handle_bgp finished")
-			s.Conn.Close()
 			return
 		default:
 			log.Println("session state: ", s.State)
