@@ -1,10 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/netip"
+	"os"
+	"os/signal"
 	"reflect"
+	"syscall"
 
 	"github.com/81ueman/local-clos/message/update"
 )
@@ -16,6 +20,7 @@ type RibAdjEntry struct {
 	LOCAL_PREF       update.LOCAL_PREF
 	ATOMIC_AGGREGATE update.ATOMIC_AGGREGATE
 }
+
 type RibAdj map[netip.Prefix]RibAdjEntry
 
 func (R *RibAdj) Update(msg update.Update) {
@@ -112,6 +117,13 @@ func AdjFromLocal(AS uint16) (RibAdj, error) {
 	}
 	return adjBest, nil
 }
+func (R *RibAdj) String() string {
+	s := ""
+	for prefix, entry := range *R {
+		s += fmt.Sprintf("%s: %v\n", prefix.String(), entry)
+	}
+	return s
+}
 
 type Peer struct {
 	RibAdjIn   RibAdj
@@ -177,4 +189,16 @@ func (L *LocRib) Handle() {
 	for _, peer := range L.peers {
 		peer.LocRibCh <- L.adjBest
 	}
+}
+
+func (L *LocRib) Sig() {
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGHUP)
+	for {
+		<-sig
+		log.Println("SIGHUP received")
+		log.Println("Print adjBest")
+		log.Print(L.adjBest)
+	}
+
 }

@@ -40,6 +40,7 @@ func main() {
 		adjConnected: adjConnected,
 		peers:        peers,
 	}
+	go LocRib.Sig()
 	for {
 		LocRib.Handle()
 	}

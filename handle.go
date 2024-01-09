@@ -9,6 +9,7 @@ import (
 	"github.com/81ueman/local-clos/message"
 	"github.com/81ueman/local-clos/message/keepalive"
 	"github.com/81ueman/local-clos/message/open"
+	"github.com/81ueman/local-clos/message/update"
 )
 
 func (s *Session) receiveMessage() {
@@ -158,7 +159,10 @@ func (s *Session) Established() {
 			s.Cancel()
 			return
 		}
-		log.Printf("msg: %v", msg)
+		update_msg := msg.(*update.Update)
+		s.AdjRIBsIn.Update(*update_msg)
+		s.AdjRibCh <- s.AdjRIBsIn
+		log.Printf("received msg: %v", msg)
 	}
 }
 
@@ -182,6 +186,8 @@ func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interfac
 		NetipAddr:           netipIp,
 		AS:                  AS,
 		MsgCh:               make(chan message.Message, 10), //magic number to be determined
+		AdjRIBsIn:           make(RibAdj),
+		AdjRIBsOut:          make(RibAdj),
 		AdjRibCh:            RibAdjInCh,
 		LocRibCh:            LocRibCh,
 		Ctx:                 ctx,
@@ -228,8 +234,8 @@ func peers_ifi(active bool, AS uint16) []Peer {
 		}
 		log.Printf("sending bgp from %v", ifi.Name)
 		ctx, cancel := context.WithCancel(context.Background())
-		RibAdjInCh := make(chan RibAdj)
-		LocRibCh := make(chan RibAdj)
+		RibAdjInCh := make(chan RibAdj, 10)
+		LocRibCh := make(chan RibAdj, 10)
 
 		peer := Peer{
 			RibAdjIn:   make(RibAdj),
