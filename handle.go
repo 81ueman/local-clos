@@ -20,7 +20,7 @@ func (s *Session) receiveMessage() {
 			s.Cancel()
 			return
 		}
-		log.Printf("msg: %v", msg)
+		log.Printf("received msg: %v", msg)
 		s.MsgCh <- msg
 	}
 }
@@ -134,17 +134,24 @@ func (s *Session) OpenConfirm() {
 func (s *Session) Established() {
 	select {
 	case locrib := <-s.LocRibCh:
-		log.Printf("ribAdj: %v", locrib)
+		log.Printf("locrib: %v", locrib)
 		//compare locrib with adjribout and send update message
 		msgs := locrib.ToUpdateMsg(s.AdjRIBsOut)
-		s.AdjRIBsOut = locrib
-		log.Printf("adjribout: %v", s.AdjRIBsOut)
-		for _, msg := range msgs {
-			err := message.Send_message(s.Conn, &msg) //TODO:pointerなの変だな
-			if err != nil {
-				log.Printf("failed to write: %v", err)
-				s.Cancel()
-				return
+		s.AdjRIBsOut = make(RibAdj)
+		for k, v := range locrib {
+			s.AdjRIBsOut[k] = v
+		}
+		if len(msgs) == 0 {
+			log.Printf("no update message")
+		} else {
+			log.Printf("updated adjribout: %v", s.AdjRIBsOut)
+			for _, msg := range msgs {
+				err := message.Send_message(s.Conn, &msg) //TODO:pointerなの変だな
+				if err != nil {
+					log.Printf("failed to write: %v", err)
+					s.Cancel()
+					return
+				}
 			}
 		}
 	case msg := <-s.MsgCh:

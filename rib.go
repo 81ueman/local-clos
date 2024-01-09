@@ -46,6 +46,7 @@ func (R *RibAdj) Update(msg update.Update) {
 // or
 // prefix in R && prefix in other && R[prefix] != other[prefix]
 func (R *RibAdj) diff(other RibAdj) (RibAdj, []netip.Prefix) {
+	log.Printf("compare %v and %v", R, other)
 	diff := make(RibAdj)
 	deleteroute := make([]netip.Prefix, 0)
 	for prefix, entry := range *R {
@@ -80,10 +81,12 @@ func (R *RibAdj) ToUpdateMsg(adjRibOut RibAdj) []update.Update {
 		}
 		msgs = append(msgs, msg)
 	}
-	deletemsg := update.Update{
-		WithdrawnRoutes: deleteroute,
+	if len(deleteroute) != 0 {
+		deletemsg := update.Update{
+			WithdrawnRoutes: deleteroute,
+		}
+		msgs = append(msgs, deletemsg)
 	}
-	msgs = append(msgs, deletemsg)
 	return msgs
 }
 
@@ -94,11 +97,15 @@ func AdjFromLocal(AS uint16) (RibAdj, error) {
 	}
 	adjBest := make(RibAdj)
 	for _, ifi := range ifis {
+		if is_loopback(ifi) {
+			continue
+		}
 		prefix, err := IfiToPrefix(ifi)
 		if err != nil {
 			log.Printf("failed to get prefix: %v", err)
 			continue
 		}
+		prefix = prefix.Masked()
 		netipIP, err := localNetipIp(ifi)
 		if err != nil {
 			log.Printf("failed to get local netip ip: %v", err)
@@ -160,7 +167,6 @@ func betterEntry(a, b RibAdjEntry) RibAdjEntry {
 
 func (l *LocRib) updateBestPath() {
 	l.adjBest = l.adjConnected
-	log.Printf("updating adjBest: %v", l.adjBest)
 	for _, peer := range l.peers {
 		for prefix, entry := range peer.RibAdjIn {
 			_, ok := l.adjBest[prefix]
@@ -181,11 +187,12 @@ func (L *LocRib) Handle() {
 	chosen, value, ok := reflect.Select(cases)
 	log.Printf("chosen: %v, value: %v, ok: %v", chosen, value, ok)
 	if !ok {
+		log.Printf("reflect.Select failed: %v", ok)
 		return
 	}
 	L.peers[chosen].RibAdjIn = value.Interface().(RibAdj)
 	L.updateBestPath()
-	log.Printf("adjBest: %v", L.adjBest)
+	log.Printf("updated adjBest: %v", L.adjBest)
 	for _, peer := range L.peers {
 		peer.LocRibCh <- L.adjBest
 	}

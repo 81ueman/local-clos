@@ -1,7 +1,6 @@
 package update
 
 import (
-	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -278,17 +277,20 @@ func (u *Update) UnMarshal(r io.Reader, length uint16) error {
 		}
 	}
 	NLRlength := length - 2 - withdrawnLength - 2 - pathAttrLen
-	//TODO:最初からbufioにしよう
-	rd := bufio.NewReader(r)
 	for i := 0; i < int(NLRlength); {
-		plen, err := rd.ReadByte()
+		_plen := make([]byte, 1)
+		n, err := r.Read(_plen)
 		if err != nil {
 			return err
 		}
+		if n != 1 {
+			return fmt.Errorf("failed to read prefix length: %v", n)
+		}
+		plen := uint8(_plen[0])
 		i += 1
 
 		prefixBin := make([]byte, 5)
-		io.ReadFull(rd, prefixBin[:(plen-1)/8+1])
+		io.ReadFull(r, prefixBin[:(plen-1)/8+1])
 		i += int((plen-1)/8 + 1)
 		prefixBin[4] = plen
 		var prefix netip.Prefix

@@ -111,6 +111,7 @@ func UnMarshal(r io.Reader) (Message, error) {
 }
 
 func Send_message(w io.Writer, m Message) error {
+	log.Printf("sending message: %v", m)
 	b, err := Marshal(m)
 	if err != nil {
 		return err
