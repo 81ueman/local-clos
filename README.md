@@ -5,7 +5,7 @@ It is intended just to study the behavior of CLOS networks in a controlled envir
 
 ## Requirements
 * Go
-* sudo (for netns)
+* sudo (to use netns, ip route, ip rule)
 
 ## Usage
 ### common part
@@ -17,13 +17,13 @@ go build
 ### terminal(for active)
 ```
 source tmp
-s1 ./local-clos active
+s1 ./local-clos -mode=active -as=65000
 ```
 
 ### terminal(for passive)
 ```
 source tmp
-l1 ./local-clos passive
+l1 ./local-clos -mode=passive -as=65001
 ```
 
 ## for the debug purpose

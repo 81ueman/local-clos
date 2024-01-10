@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"os/exec"
 	"os/signal"
 	"reflect"
 	"syscall"
@@ -67,7 +68,7 @@ func (R *RibAdj) diff(other RibAdj) (RibAdj, []netip.Prefix) {
 	return diff, deleteroute
 }
 
-func (R *RibAdj) ToUpdateMsg(adjRibOut RibAdj) []update.Update {
+func (R *RibAdj) ToUpdateMsg(adjRibOut RibAdj, nexthop netip.Addr) []update.Update {
 	ribdiff, deleteroute := R.diff(adjRibOut)
 	log.Printf("ribdiff: %v", ribdiff)
 	msgs := make([]update.Update, 0)
@@ -76,7 +77,7 @@ func (R *RibAdj) ToUpdateMsg(adjRibOut RibAdj) []update.Update {
 			NetworkLayerReachabilityInformation: []netip.Prefix{prefix},
 			PathAttrOrigin:                      entry.ORIGIN,
 			PathAttrASPath:                      entry.AS_PATH,
-			PathAttrNextHop:                     entry.NEXT_HOP,
+			PathAttrNextHop:                     update.NEXT_HOP(nexthop),
 			PathAttrLocalPref:                   entry.LOCAL_PREF,
 		}
 		msgs = append(msgs, msg)
@@ -124,9 +125,9 @@ func AdjFromLocal(AS uint16) (RibAdj, error) {
 	}
 	return adjBest, nil
 }
-func (R *RibAdj) String() string {
+func (R RibAdj) String() string {
 	s := ""
-	for prefix, entry := range *R {
+	for prefix, entry := range R {
 		s += fmt.Sprintf("%s: %v\n", prefix.String(), entry)
 	}
 	return s
@@ -195,6 +196,22 @@ func (L *LocRib) Handle() {
 	log.Printf("updated adjBest: %v", L.adjBest)
 	for _, peer := range L.peers {
 		peer.LocRibCh <- L.adjBest
+	}
+}
+
+func (L *LocRib) UpdateRoutingTable() {
+	err := exec.Command("ip", "route", "flush", "table", ROUTINGTABLE).Run()
+	if err != nil {
+		log.Printf("failed to flush routing table: %v", err)
+	}
+	for prefix, entry := range L.adjBest {
+		nextHop := netip.Addr(entry.NEXT_HOP).String()
+		cmdStr := fmt.Sprintf("ip route add %s via %s table %s", prefix.String(), nextHop, ROUTINGTABLE)
+		log.Printf("cmdStr: %s", cmdStr)
+		err := exec.Command("ip", "route", "add", prefix.String(), "via", nextHop, "table", ROUTINGTABLE).Run()
+		if err != nil {
+			log.Printf("failed to add routing table: %v", err)
+		}
 	}
 }
 

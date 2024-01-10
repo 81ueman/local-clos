@@ -5,10 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os/exec"
 )
 
 const ACTIVE bool = true
 const PASSIVE bool = false
+
+const ROUTINGTABLE string = "10"
 
 func main() {
 	mode := flag.String("mode", "active", "active or passive")
@@ -40,8 +43,22 @@ func main() {
 		adjConnected: adjConnected,
 		peers:        peers,
 	}
+
+	for {
+		err = exec.Command("ip", "route", "del", "table", ROUTINGTABLE).Run()
+		if err != nil {
+			break
+		}
+	}
+
+	err = exec.Command("ip", "rule", "add", "table", ROUTINGTABLE).Run()
+	if err != nil {
+		log.Fatalf("failed to add ip rule: %v", err)
+	}
+
 	go LocRib.Sig()
 	for {
 		LocRib.Handle()
+		LocRib.UpdateRoutingTable()
 	}
 }

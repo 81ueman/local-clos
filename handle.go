@@ -134,9 +134,10 @@ func (s *Session) OpenConfirm() {
 func (s *Session) Established() {
 	select {
 	case locrib := <-s.LocRibCh:
-		log.Printf("locrib: %v", locrib)
+		log.Println("locrib")
+		log.Print(locrib)
 		//compare locrib with adjribout and send update message
-		msgs := locrib.ToUpdateMsg(s.AdjRIBsOut)
+		msgs := locrib.ToUpdateMsg(s.AdjRIBsOut, s.NetipAddr)
 		s.AdjRIBsOut = make(RibAdj)
 		for k, v := range locrib {
 			s.AdjRIBsOut[k] = v
@@ -224,7 +225,6 @@ func handle_bgp(ctx context.Context, cancel context.CancelFunc, ifi net.Interfac
 			default:
 				log.Fatalf("unknown state: %v", s.State)
 			}
-			time.Sleep(1 * time.Second)
 		}
 	}
 }
