@@ -168,7 +168,7 @@ func (s *Session) Established() {
 			return
 		}
 		update_msg := msg.(*update.Update)
-		s.AdjRIBsIn.Update(*update_msg)
+		s.AdjRIBsIn.Update(*update_msg, s.AS)
 		s.AdjRibCh <- s.AdjRIBsIn
 		log.Printf("received msg: %v", msg)
 	}

@@ -24,9 +24,22 @@ type RibAdjEntry struct {
 
 type RibAdj map[netip.Prefix]RibAdjEntry
 
-func (R *RibAdj) Update(msg update.Update) {
+func ASLoop(AS_PATH update.AS_PATH, localAS uint16) bool {
+	for _, AS := range AS_PATH.AS_SEQUENCE {
+		if AS == localAS {
+			log.Printf("AS loop detected")
+			return true
+		}
+	}
+	return false
+}
+
+func (R *RibAdj) Update(msg update.Update, AS uint16) {
 	for _, prefix := range msg.WithdrawnRoutes {
 		delete(*R, prefix)
+	}
+	if ASLoop(msg.PathAttrASPath, AS) {
+		return
 	}
 	entry := RibAdjEntry{
 		ORIGIN:     msg.PathAttrOrigin,
